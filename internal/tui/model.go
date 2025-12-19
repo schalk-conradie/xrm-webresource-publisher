@@ -36,6 +36,14 @@ const (
 	InputDeleteConfirm
 )
 
+// BindingTab represents the active tab in the binding view
+type BindingTab int
+
+const (
+	BindingTabList BindingTab = iota
+	BindingTabBind
+)
+
 // TreeNode represents a folder or file in the tree
 type TreeNode struct {
 	Name     string
@@ -67,6 +75,8 @@ type Model struct {
 	expandedFolders  map[string]bool
 	envSelected      int
 	resourceSelected int
+	bindingTab       BindingTab
+	bindingSelected  int
 	status           string
 	statusIsError    bool
 	inputMode        InputMode

@@ -350,108 +350,193 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.treeRoot = nil
 		return m, nil
 
+	case "tab":
+		// Switch between tabs
+		if m.bindingTab == BindingTabBind {
+			m.bindingTab = BindingTabList
+			m.bindingSelected = 0
+		} else {
+			m.bindingTab = BindingTabBind
+			m.resourceSelected = 0
+		}
+		return m, nil
+
 	case "up", "k":
-		if m.resourceSelected > 0 {
-			m.resourceSelected--
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected > 0 {
+				m.resourceSelected--
+			}
+		} else {
+			if m.bindingSelected > 0 {
+				m.bindingSelected--
+			}
 		}
 
 	case "down", "j":
-		if m.resourceSelected < len(m.displayItems)-1 {
-			m.resourceSelected++
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems)-1 {
+				m.resourceSelected++
+			}
+		} else {
+			bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+			if m.bindingSelected < len(bindings)-1 {
+				m.bindingSelected++
+			}
 		}
 
 	case "enter":
-		if m.resourceSelected < len(m.displayItems) {
-			item := m.displayItems[m.resourceSelected]
-			if item.Node.IsFolder {
-				m.toggleFolder(item.Node.FullPath)
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if item.Node.IsFolder {
+					m.toggleFolder(item.Node.FullPath)
+				}
 			}
 		}
 		return m, nil
 
 	case "b":
-		if m.resourceSelected < len(m.displayItems) {
-			item := m.displayItems[m.resourceSelected]
-			if !item.Node.IsFolder && item.Resource != nil {
-				// Initialize file picker
-				fp := filepicker.New()
-				// fp.DirAllowed = false
-				fp.CurrentDirectory, _ = os.UserHomeDir()
-				fp.Height = m.height - 6
-				m.filepicker = fp
-				m.bindingResource = item.Resource
-				m.state = StateFilePicker
-				return m, m.filepicker.Init()
-			} else {
-				m.status = "Select a file to bind"
-				m.statusIsError = true
+		// Only available in Bind Files tab
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if !item.Node.IsFolder && item.Resource != nil {
+					// Initialize file picker
+					fp := filepicker.New()
+					// fp.DirAllowed = false
+					fp.CurrentDirectory, _ = os.UserHomeDir()
+					fp.Height = m.height - 6
+					m.filepicker = fp
+					m.bindingResource = item.Resource
+					m.state = StateFilePicker
+					return m, m.filepicker.Init()
+				} else {
+					m.status = "Select a file to bind"
+					m.statusIsError = true
+				}
 			}
 		}
 		return m, nil
 
 	case "p":
-		if m.resourceSelected < len(m.displayItems) {
-			item := m.displayItems[m.resourceSelected]
-			if !item.Node.IsFolder && item.Resource != nil {
-				// Mark as publishing
-				m.publishing[item.Resource.ID] = true
-				return m, m.publishResource(*item.Resource)
-			} else {
-				m.status = "Select a file to publish"
-				m.statusIsError = true
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if !item.Node.IsFolder && item.Resource != nil {
+					// Mark as publishing
+					m.publishing[item.Resource.ID] = true
+					return m, m.publishResource(*item.Resource)
+				} else {
+					m.status = "Select a file to publish"
+					m.statusIsError = true
+				}
+			}
+		} else {
+			// In File List tab
+			bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+			if m.bindingSelected < len(bindings) {
+				binding := bindings[m.bindingSelected]
+				// Find the resource
+				for _, res := range m.resources {
+					if res.ID == binding.WebResourceID {
+						m.publishing[res.ID] = true
+						return m, m.publishResource(res)
+					}
+				}
 			}
 		}
 
 	case "a":
-		if m.resourceSelected < len(m.displayItems) {
-			item := m.displayItems[m.resourceSelected]
-			if !item.Node.IsFolder && item.Resource != nil {
-				res := item.Resource
-				if b := m.config.GetBinding(m.config.CurrentEnvironment, res.ID); b != nil {
-					b.AutoPublish = !b.AutoPublish
-					m.config.AddBinding(*b)
-					if b.AutoPublish {
-						m.status = "Auto-publish enabled"
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if !item.Node.IsFolder && item.Resource != nil {
+					res := item.Resource
+					if b := m.config.GetBinding(m.config.CurrentEnvironment, res.ID); b != nil {
+						b.AutoPublish = !b.AutoPublish
+						m.config.AddBinding(*b)
+						if b.AutoPublish {
+							m.status = "Auto-publish enabled"
+						} else {
+							m.status = "Auto-publish disabled"
+						}
+						m.statusIsError = false
 					} else {
-						m.status = "Auto-publish disabled"
+						m.status = "Bind a file first"
+						m.statusIsError = true
 					}
-					m.statusIsError = false
 				} else {
-					m.status = "Bind a file first"
+					m.status = "Select a file to toggle auto-publish"
 					m.statusIsError = true
 				}
-			} else {
-				m.status = "Select a file to toggle auto-publish"
-				m.statusIsError = true
+			}
+		} else {
+			// In File List tab
+			bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+			if m.bindingSelected < len(bindings) {
+				binding := bindings[m.bindingSelected]
+				binding.AutoPublish = !binding.AutoPublish
+				m.config.AddBinding(binding)
+				if binding.AutoPublish {
+					m.status = "Auto-publish enabled"
+				} else {
+					m.status = "Auto-publish disabled"
+				}
+				m.statusIsError = false
 			}
 		}
 
 	case "u":
-		if m.resourceSelected < len(m.displayItems) {
-			item := m.displayItems[m.resourceSelected]
-			if !item.Node.IsFolder && item.Resource != nil {
-				res := item.Resource
-				if b := m.config.GetBinding(m.config.CurrentEnvironment, res.ID); b != nil {
-					// Remove from watcher if it was being watched
-					if m.watcher != nil && b.AutoPublish {
-						absPath, _ := filepath.Abs(b.LocalPath)
-						m.watcher.RemoveFile(absPath)
-					}
-					// Delete the binding
-					if err := m.config.DeleteBinding(m.config.CurrentEnvironment, res.ID); err != nil {
-						m.status = fmt.Sprintf("Failed to unbind: %v", err)
-						m.statusIsError = true
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if !item.Node.IsFolder && item.Resource != nil {
+					res := item.Resource
+					if b := m.config.GetBinding(m.config.CurrentEnvironment, res.ID); b != nil {
+						// Remove from watcher if it was being watched
+						if m.watcher != nil && b.AutoPublish {
+							absPath, _ := filepath.Abs(b.LocalPath)
+							m.watcher.RemoveFile(absPath)
+						}
+						// Delete the binding
+						if err := m.config.DeleteBinding(m.config.CurrentEnvironment, res.ID); err != nil {
+							m.status = fmt.Sprintf("Failed to unbind: %v", err)
+							m.statusIsError = true
+						} else {
+							m.status = fmt.Sprintf("Unbound %s", res.Name)
+							m.statusIsError = false
+						}
 					} else {
-						m.status = fmt.Sprintf("Unbound %s", res.Name)
-						m.statusIsError = false
+						m.status = "File is not bound"
+						m.statusIsError = true
 					}
 				} else {
-					m.status = "File is not bound"
+					m.status = "Select a file to unbind"
 					m.statusIsError = true
 				}
-			} else {
-				m.status = "Select a file to unbind"
-				m.statusIsError = true
+			}
+		} else {
+			// In File List tab
+			bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+			if m.bindingSelected < len(bindings) {
+				binding := bindings[m.bindingSelected]
+				// Remove from watcher if it was being watched
+				if m.watcher != nil && binding.AutoPublish {
+					absPath, _ := filepath.Abs(binding.LocalPath)
+					m.watcher.RemoveFile(absPath)
+				}
+				// Delete the binding
+				if err := m.config.DeleteBinding(m.config.CurrentEnvironment, binding.WebResourceID); err != nil {
+					m.status = fmt.Sprintf("Failed to unbind: %v", err)
+					m.statusIsError = true
+				} else {
+					m.status = fmt.Sprintf("Unbound %s", binding.WebResourceName)
+					m.statusIsError = false
+					// Adjust selection if needed
+					if m.bindingSelected >= len(bindings)-1 && m.bindingSelected > 0 {
+						m.bindingSelected--
+					}
+				}
 			}
 		}
 

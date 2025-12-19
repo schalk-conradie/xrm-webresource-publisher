@@ -58,6 +58,23 @@ var (
 			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1).
 			MarginTop(1)
+
+	// Tab styles
+	activeTabStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("229")).
+			Background(lipgloss.Color("57")).
+			Padding(0, 2)
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				Background(lipgloss.Color("235")).
+				Padding(0, 2)
+
+	tabContainerStyle = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder(), false, false, true, false).
+				BorderForeground(lipgloss.Color("240")).
+				MarginBottom(1)
 )
 
 // View renders the UI
@@ -186,14 +203,62 @@ func (m Model) viewList() string {
 	}
 	sections = append(sections, title)
 
-	// Resources content
+	// Tabs
+	tabs := m.renderTabs()
+	sections = append(sections, tabs)
+
+	// Tab content
+	var content string
+	switch m.bindingTab {
+	case BindingTabBind:
+		content = m.viewBindFilesTab()
+	case BindingTabList:
+		content = m.viewFileListTab()
+	}
+
+	sections = append(sections, content)
+
+	// Help text based on active tab
+	var helpText string
+	if m.bindingTab == BindingTabBind {
+		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • esc: back • q: quit"
+	} else {
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • esc: back • q: quit"
+	}
+	sections = append(sections, helpStyle.Render(helpText))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderTabs() string {
+	var tabs []string
+
+	// Tab 1: Bind Files
+	if m.bindingTab == BindingTabBind {
+		tabs = append(tabs, activeTabStyle.Render("Bind Files"))
+	} else {
+		tabs = append(tabs, inactiveTabStyle.Render("Bind Files"))
+	}
+
+	// Tab 2: File List
+	if m.bindingTab == BindingTabList {
+		tabs = append(tabs, activeTabStyle.Render("File List"))
+	} else {
+		tabs = append(tabs, inactiveTabStyle.Render("File List"))
+	}
+
+	row := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+	return tabContainerStyle.Width(m.width - 12).Render(row)
+}
+
+func (m Model) viewBindFilesTab() string {
 	var resourceContent strings.Builder
 
 	if len(m.displayItems) == 0 {
 		resourceContent.WriteString(dimStyle.Render("No web resources found"))
 	} else {
 		// Calculate visible range for scrolling
-		visibleLines := m.height - 10
+		visibleLines := m.height - 14
 		if visibleLines < 5 {
 			visibleLines = 5
 		}
@@ -258,11 +323,74 @@ func (m Model) viewList() string {
 		}
 	}
 
-	resourceBox := contentBoxStyle.Width(m.width - 12).Height(m.height - 12).Render(resourceContent.String())
-	sections = append(sections, resourceBox)
-	sections = append(sections, helpStyle.Render("↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • esc: back • q: quit"))
+	return contentBoxStyle.Width(m.width - 12).Height(m.height - 14).Render(resourceContent.String())
+}
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+func (m Model) viewFileListTab() string {
+	var listContent strings.Builder
+
+	// Get all bindings for current environment
+	bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+	
+	if len(bindings) == 0 {
+		listContent.WriteString(dimStyle.Render("No bound files\n"))
+		listContent.WriteString(dimStyle.Render("Switch to 'Bind Files' tab to bind web resources"))
+	} else {
+		// Calculate visible range for scrolling
+		visibleLines := m.height - 14
+		if visibleLines < 5 {
+			visibleLines = 5
+		}
+
+		start := 0
+		if m.bindingSelected >= visibleLines {
+			start = m.bindingSelected - visibleLines + 1
+		}
+
+		end := start + visibleLines
+		if end > len(bindings) {
+			end = len(bindings)
+		}
+
+		for i := start; i < end; i++ {
+			binding := bindings[i]
+			
+			// Build the line
+			var line strings.Builder
+			line.WriteString(binding.WebResourceName)
+			line.WriteString("\n  ")
+			line.WriteString(dimStyle.Render("→ " + binding.LocalPath))
+			line.WriteString("  ")
+
+			// Status indicators
+			var status string
+			if m.publishing[binding.WebResourceID] {
+				status = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(m.spinner.View() + " [publishing]")
+			} else if binding.AutoPublish {
+				status = boundStyle.Render("[auto]")
+			} else {
+				status = boundStyle.Render("[bound]")
+			}
+			line.WriteString(status)
+
+			lineStr := line.String()
+			if i == m.bindingSelected {
+				listContent.WriteString(selectedStyle.Render("> " + lineStr))
+			} else {
+				listContent.WriteString(normalStyle.Render("  " + lineStr))
+			}
+			
+			if i < end-1 {
+				listContent.WriteString("\n\n")
+			}
+		}
+
+		if len(bindings) > visibleLines {
+			listContent.WriteString(dimStyle.Render(fmt.Sprintf("\n\n[%d/%d]", m.bindingSelected+1, len(bindings))))
+		}
+	}
+
+	return contentBoxStyle.Width(m.width - 12).Height(m.height - 14).Render(listContent.String())
 }
 
 func (m Model) viewBinding() string {
