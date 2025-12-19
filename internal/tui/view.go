@@ -9,9 +9,11 @@ import (
 
 var (
 	titleStyle = lipgloss.NewStyle().
+			Align(lipgloss.Center).
 			Bold(true).
 			Foreground(lipgloss.Color("205")).
-			MarginBottom(1)
+			Background(lipgloss.Color("235")).
+			Padding(0, 1)
 
 	selectedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("229")).
@@ -32,124 +34,163 @@ var (
 
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
-			MarginTop(1)
+			Padding(0, 1)
 
 	boundStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42"))
 
 	unboundStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
+
+	// Border styles
+	mainBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 2)
+
+	contentBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1)
+
+	statusBarStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1).
+			MarginTop(1)
 )
 
 // View renders the UI
 func (m Model) View() string {
-	var b strings.Builder
+	var content string
+
+	// File picker needs full screen - don't wrap in borders
+	if m.state == StateFilePicker {
+		return m.viewFilePicker()
+	}
 
 	switch m.state {
 	case StateEnvironmentSelect:
-		b.WriteString(m.viewEnvironmentSelect())
+		content = m.viewEnvironmentSelect()
 	case StateAuth:
-		b.WriteString(m.viewAuth())
+		content = m.viewAuth()
 	case StateList:
-		b.WriteString(m.viewList())
+		content = m.viewList()
 	case StateBinding:
-		b.WriteString(m.viewBinding())
-	case StateFilePicker:
-		b.WriteString(m.viewFilePicker())
+		content = m.viewBinding()
 	}
 
+	// Wrap content in main border
+	mainContent := mainBorderStyle.Width(m.width - 4).Render(content)
+
 	// Status bar
+	var statusBar string
 	if m.status != "" {
-		b.WriteString("\n")
 		if m.statusIsError {
-			b.WriteString(errorStyle.Render(m.status))
+			statusBar = statusBarStyle.Width(m.width - 4).Render(errorStyle.Render("● ") + m.status)
 		} else {
-			b.WriteString(statusStyle.Render(m.status))
+			statusBar = statusBarStyle.Width(m.width - 4).Render(statusStyle.Render("● ") + m.status)
 		}
 	}
 
-	return b.String()
+	if statusBar != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, mainContent, statusBar)
+	}
+	return mainContent
 }
 
 func (m Model) viewEnvironmentSelect() string {
-	var b strings.Builder
+	var sections []string
 
-	b.WriteString(titleStyle.Render("D365 Web Resource Publisher"))
-	b.WriteString("\n\n")
+	// Title
+	title := titleStyle.Render("D365 Web Resource Publisher")
+	sections = append(sections, title)
 
 	// Input mode
 	if m.inputMode != InputNone {
+		var inputContent strings.Builder
 		switch m.inputMode {
 		case InputEnvironmentName:
-			b.WriteString("Environment Name:\n")
+			inputContent.WriteString("Environment Name:\n")
 		case InputEnvironmentURL:
-			b.WriteString("Environment URL:\n")
+			inputContent.WriteString("Environment URL:\n")
 		case InputDeleteConfirm:
 			if m.envSelected < len(m.config.Environments) {
-				b.WriteString(fmt.Sprintf("Delete '%s'? (y/n):\n", m.config.Environments[m.envSelected].Name))
+				inputContent.WriteString(fmt.Sprintf("Delete '%s'? (y/n):\n", m.config.Environments[m.envSelected].Name))
 			}
 		}
-		b.WriteString(m.textInput.View())
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("enter: confirm • esc: cancel"))
-		return b.String()
+		inputContent.WriteString(m.textInput.View())
+		inputBox := contentBoxStyle.Width(m.width - 12).Render(inputContent.String())
+		sections = append(sections, inputBox)
+		sections = append(sections, helpStyle.Render("enter: confirm • esc: cancel"))
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
 	// Environment list
+	var envContent strings.Builder
 	if len(m.config.Environments) == 0 {
-		b.WriteString(dimStyle.Render("No environments configured"))
-		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("Press 'a' to add an environment"))
+		envContent.WriteString(dimStyle.Render("No environments configured\n"))
+		envContent.WriteString(dimStyle.Render("Press 'a' to add an environment"))
 	} else {
-		b.WriteString("Select an environment:\n\n")
 		for i, env := range m.config.Environments {
 			line := fmt.Sprintf("  %s\n  %s", env.Name, dimStyle.Render(env.URL))
 			if i == m.envSelected {
-				b.WriteString(selectedStyle.Render("> " + line))
+				envContent.WriteString(selectedStyle.Render("> " + line))
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
+				envContent.WriteString(normalStyle.Render("  " + line))
 			}
-			b.WriteString("\n\n")
+			if i < len(m.config.Environments)-1 {
+				envContent.WriteString("\n\n")
+			}
 		}
 	}
 
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • q: quit"))
+	envBox := contentBoxStyle.Width(m.width - 12).Render(envContent.String())
+	sections = append(sections, envBox)
+	sections = append(sections, helpStyle.Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • q: quit"))
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) viewAuth() string {
-	var b strings.Builder
+	var sections []string
 
-	b.WriteString(titleStyle.Render("Authentication Required"))
-	b.WriteString("\n\n")
+	// Title
+	title := titleStyle.Render("Authentication Required")
+	sections = append(sections, title)
 
-	b.WriteString(m.spinner.View())
-	b.WriteString(" Opening browser for authentication...")
-	b.WriteString("\n\n")
-	b.WriteString("A browser window will open for you to sign in.\n")
-	b.WriteString("After signing in, you can return to this application.")
+	// Auth content
+	var authContent strings.Builder
+	authContent.WriteString(m.spinner.View())
+	authContent.WriteString(" Opening browser for authentication...\n\n")
+	authContent.WriteString("A browser window will open for you to sign in.\n")
+	authContent.WriteString("After signing in, you can return to this application.")
 
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("esc: back • q: quit"))
+	authBox := contentBoxStyle.Width(m.width - 12).Render(authContent.String())
+	sections = append(sections, authBox)
+	sections = append(sections, helpStyle.Render("esc: back • q: quit"))
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) viewList() string {
-	var b strings.Builder
+	var sections []string
 
+	// Title
 	env := m.config.GetEnvironment(m.config.CurrentEnvironment)
+	var title string
 	if env != nil {
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Web Resources - %s", env.Name)))
+		title = titleStyle.Render(fmt.Sprintf("Web Resources - %s", env.Name))
 	} else {
-		b.WriteString(titleStyle.Render("Web Resources"))
+		title = titleStyle.Render("Web Resources")
 	}
-	b.WriteString("\n\n")
+	sections = append(sections, title)
+
+	// Resources content
+	var resourceContent strings.Builder
 
 	if len(m.displayItems) == 0 {
-		b.WriteString(dimStyle.Render("No web resources found"))
-		b.WriteString("\n")
+		resourceContent.WriteString(dimStyle.Render("No web resources found"))
 	} else {
 		// Calculate visible range for scrolling
 		visibleLines := m.height - 10
@@ -205,55 +246,63 @@ func (m Model) viewList() string {
 			}
 
 			if i == m.resourceSelected {
-				b.WriteString(selectedStyle.Render("> " + line))
+				resourceContent.WriteString(selectedStyle.Render("> " + line))
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
+				resourceContent.WriteString(normalStyle.Render("  " + line))
 			}
-			b.WriteString("\n")
+			resourceContent.WriteString("\n")
 		}
 
 		if len(m.displayItems) > visibleLines {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("\n[%d/%d]", m.resourceSelected+1, len(m.displayItems))))
+			resourceContent.WriteString(dimStyle.Render(fmt.Sprintf("\n[%d/%d]", m.resourceSelected+1, len(m.displayItems))))
 		}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: expand/collapse • b: bind • p: publish • a: toggle auto • r: refresh • esc: back • q: quit"))
+	resourceBox := contentBoxStyle.Width(m.width - 12).Height(m.height - 12).Render(resourceContent.String())
+	sections = append(sections, resourceBox)
+	sections = append(sections, helpStyle.Render("↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • esc: back • q: quit"))
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) viewBinding() string {
-	var b strings.Builder
+	var sections []string
 
-	b.WriteString(titleStyle.Render("Bind Web Resource"))
-	b.WriteString("\n\n")
+	// Title
+	title := titleStyle.Render("Bind Web Resource")
+	sections = append(sections, title)
 
+	// Binding content
+	var bindContent strings.Builder
 	if m.resourceSelected < len(m.resources) {
 		res := m.resources[m.resourceSelected]
-		b.WriteString(fmt.Sprintf("Resource: %s\n\n", res.Name))
+		bindContent.WriteString(fmt.Sprintf("Resource: %s\n\n", res.Name))
 	}
+	bindContent.WriteString("Local file path:\n")
+	bindContent.WriteString(m.textInput.View())
 
-	b.WriteString("Local file path:\n")
-	b.WriteString(m.textInput.View())
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("enter: confirm • esc: cancel"))
+	bindBox := contentBoxStyle.Width(m.width - 12).Render(bindContent.String())
+	sections = append(sections, bindBox)
+	sections = append(sections, helpStyle.Render("enter: confirm • esc: cancel"))
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) viewFilePicker() string {
 	var b strings.Builder
 
+	// Simple title
 	b.WriteString(titleStyle.Render("Select Local File"))
 	b.WriteString("\n\n")
 
+	// Binding info
 	if m.bindingResource != nil {
 		b.WriteString(fmt.Sprintf("Binding: %s\n\n", m.bindingResource.Name))
 	}
 
+	// File picker takes remaining space
 	b.WriteString(m.filepicker.View())
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
 
 	return b.String()

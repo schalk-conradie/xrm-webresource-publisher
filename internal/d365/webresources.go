@@ -20,7 +20,7 @@ type WebResourceResponse struct {
 // ListWebResources retrieves web resources (HTML, CSS, JS only, custom/unmanaged only)
 func (c *Client) ListWebResources() ([]WebResource, error) {
 	// Filter by webresourcetype: 1=HTML, 2=CSS, 3=JS
-	// Also filter by ismanaged eq false to only get custom (unmanaged) resources
+	// Also filter by ismanaged eq false to only get unmanaged resources
 	filter := url.QueryEscape("(webresourcetype eq 1 or webresourcetype eq 2 or webresourcetype eq 3) and ismanaged eq false")
 	path := "/webresourceset?$select=webresourceid,name,versionnumber&$filter=" + filter + "&$orderby=name"
 

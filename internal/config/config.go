@@ -267,3 +267,21 @@ func (c *Config) UpdateBindingVersion(envName, webResourceID, version string) er
 	}
 	return errors.New("binding not found")
 }
+
+// DeleteBinding removes a binding by environment and web resource ID
+func (c *Config) DeleteBinding(envName, webResourceID string) error {
+	newBindings := make([]Binding, 0, len(c.Bindings))
+	found := false
+	for _, b := range c.Bindings {
+		if b.Environment == envName && b.WebResourceID == webResourceID {
+			found = true
+			continue
+		}
+		newBindings = append(newBindings, b)
+	}
+	if !found {
+		return errors.New("binding not found")
+	}
+	c.Bindings = newBindings
+	return c.Save()
+}

@@ -8,11 +8,8 @@ import (
 )
 
 const (
-	// ClientID is the Azure AD application (client) ID
 	ClientID      = "51f81489-12ee-4a9e-aaae-a2591f45987d"
-	// RedirectURL is the local URL for OAuth redirects
 	RedirectURL   = "http://localhost:8400"
-	// AuthorityBase is the Azure AD authority endpoint
 	AuthorityBase = "https://login.microsoftonline.com/common"
 )
 
@@ -20,7 +17,6 @@ const (
 func AcquireTokenInteractive(orgURL string) (*Token, error) {
 	scope := orgURL + "/.default"
 
-	// Create public client application
 	app, err := public.New(ClientID, public.WithAuthority(AuthorityBase))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create public client: %w", err)
@@ -89,7 +85,7 @@ func RefreshAccessToken(refreshToken, orgURL string) (*Token, error) {
 func convertAuthResult(result public.AuthResult) *Token {
 	return &Token{
 		AccessToken:  result.AccessToken,
-		RefreshToken: "", // MSAL handles refresh internally via token cache
+		RefreshToken: "",
 		ExpiresAt:    result.ExpiresOn,
 	}
 }

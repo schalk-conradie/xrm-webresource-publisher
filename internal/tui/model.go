@@ -1,12 +1,13 @@
 package tui
 
 import (
+	"sort"
+	"strings"
+
 	"d365tui/internal/auth"
 	"d365tui/internal/config"
 	"d365tui/internal/d365"
 	"d365tui/internal/watcher"
-	"sort"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -59,6 +60,7 @@ type Model struct {
 	token            *auth.Token
 	client           *d365.Client
 	watcher          *watcher.Watcher
+	fileChangeChan   chan string
 	resources        []d365.WebResource
 	treeRoot         *TreeNode
 	displayItems     []DisplayItem
@@ -104,6 +106,7 @@ func NewModel() Model {
 		height:          24,
 		expandedFolders: make(map[string]bool),
 		publishing:      make(map[string]bool),
+		fileChangeChan:  make(chan string, 10), // Buffered channel for file changes
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-
 // DeviceCodeResponse represents the device code response from Azure AD
 type DeviceCodeResponse struct {
 	DeviceCode      string `json:"device_code"`
@@ -125,8 +124,7 @@ func PollForToken(deviceCode string, orgURL string, interval int) (*Token, error
 	}
 }
 
-// RefreshAccessTokenLegacy refreshes an expired token using the old device code flow method
-// This is kept for backwards compatibility but the MSAL approach in browser_auth.go should be preferred
+// RefreshAccessTokenLegacy refreshes an expired token using legacy devide code flow
 func RefreshAccessTokenLegacy(refreshToken, orgURL string) (*Token, error) {
 	scope := orgURL + "/.default"
 

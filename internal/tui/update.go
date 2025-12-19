@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"d365tui/internal/auth"
 	"d365tui/internal/config"
@@ -80,6 +81,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case watcherReadyMsg:
 		m.watcher = msg
+		// Start listening for file changes
+		if m.fileChangeChan != nil {
+			return m, waitForFileChange(m.fileChangeChan)
+		}
 		return m, nil
 
 	case publishResultMsg:
@@ -106,7 +111,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		return m, m.handleFileChange(path)
+		// Continue listening for more file changes
+		return m, tea.Batch(
+			m.handleFileChange(path),
+			waitForFileChange(m.fileChangeChan),
+		)
 
 	case errMsg:
 		m.status = fmt.Sprintf("Error: %v", msg)
@@ -417,6 +426,35 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "u":
+		if m.resourceSelected < len(m.displayItems) {
+			item := m.displayItems[m.resourceSelected]
+			if !item.Node.IsFolder && item.Resource != nil {
+				res := item.Resource
+				if b := m.config.GetBinding(m.config.CurrentEnvironment, res.ID); b != nil {
+					// Remove from watcher if it was being watched
+					if m.watcher != nil && b.AutoPublish {
+						absPath, _ := filepath.Abs(b.LocalPath)
+						m.watcher.RemoveFile(absPath)
+					}
+					// Delete the binding
+					if err := m.config.DeleteBinding(m.config.CurrentEnvironment, res.ID); err != nil {
+						m.status = fmt.Sprintf("Failed to unbind: %v", err)
+						m.statusIsError = true
+					} else {
+						m.status = fmt.Sprintf("Unbound %s", res.Name)
+						m.statusIsError = false
+					}
+				} else {
+					m.status = "File is not bound"
+					m.statusIsError = true
+				}
+			} else {
+				m.status = "Select a file to unbind"
+				m.statusIsError = true
+			}
+		}
+
 	case "r":
 		return m, m.fetchResources()
 	}
@@ -556,11 +594,18 @@ func (m Model) fetchResources() tea.Cmd {
 
 func (m Model) setupWatchers() tea.Cmd {
 	cfg := m.config
-	client := m.client
+	fileChangeChan := m.fileChangeChan
 
 	return func() tea.Msg {
 		w, err := watcher.New(func(path string) {
-			// File change handling is done via messages
+			// Send file change notification through channel
+			if fileChangeChan != nil {
+				select {
+				case fileChangeChan <- path:
+				default:
+					// Channel full, skip
+				}
+			}
 		})
 		if err != nil {
 			return errMsg(err)
@@ -576,8 +621,15 @@ func (m Model) setupWatchers() tea.Cmd {
 			}
 		}
 
-		_ = client // Capture for closure
 		return watcherReadyMsg(w)
+	}
+}
+
+// waitForFileChange is a subscription that waits for file changes
+func waitForFileChange(fileChangeChan chan string) tea.Cmd {
+	return func() tea.Msg {
+		path := <-fileChangeChan
+		return fileChangeMsg(path)
 	}
 }
 
@@ -627,25 +679,42 @@ func (m Model) handleFileChange(path string) tea.Cmd {
 				// Find the resource and publish
 				for _, res := range resources {
 					if res.ID == b.WebResourceID {
-						content, err := os.ReadFile(path)
+						// Retry reading file to handle atomic saves
+						// Editors like Neovim delete the original and rename a temp file
+						var content []byte
+						var err error
+						for attempt := 0; attempt < 5; attempt++ {
+							if attempt > 0 {
+								time.Sleep(50 * time.Millisecond)
+							}
+							content, err = os.ReadFile(b.LocalPath)
+							if err == nil {
+								break
+							}
+						}
 						if err != nil {
-							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
+							return publishResultMsg{
+								success:    false,
+								err:        fmt.Errorf("reading %s: %w", b.LocalPath, err),
+								path:       b.LocalPath,
+								resourceID: res.ID,
+							}
 						}
 
 						encoded := base64.StdEncoding.EncodeToString(content)
 
 						if err := client.UpdateWebResourceContent(res.ID, encoded); err != nil {
-							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
+							return publishResultMsg{success: false, err: err, path: b.LocalPath, resourceID: res.ID}
 						}
 
 						if err := client.PublishWebResource(res.ID); err != nil {
-							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
+							return publishResultMsg{success: false, err: err, path: b.LocalPath, resourceID: res.ID}
 						}
 
 						newVersion := incrementVersion(b.LastKnownVersion)
 						cfg.UpdateBindingVersion(cfg.CurrentEnvironment, res.ID, newVersion)
 
-						return publishResultMsg{success: true, path: path, resourceID: res.ID}
+						return publishResultMsg{success: true, path: b.LocalPath, resourceID: res.ID}
 					}
 				}
 			}

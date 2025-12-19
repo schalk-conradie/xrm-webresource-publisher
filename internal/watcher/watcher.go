@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,7 +16,8 @@ type FileChange struct {
 // Watcher manages file watching for auto-publish
 type Watcher struct {
 	watcher    *fsnotify.Watcher
-	files      map[string]bool
+	files      map[string]bool      // tracks watched files
+	dirs       map[string][]string  // maps directories to files in them
 	onChange   func(path string)
 	debounce   map[string]time.Time
 	debounceMu sync.Mutex
@@ -34,6 +36,7 @@ func New(onChange func(path string)) (*Watcher, error) {
 	w := &Watcher{
 		watcher:    fsWatcher,
 		files:      make(map[string]bool),
+		dirs:       make(map[string][]string),
 		onChange:   onChange,
 		debounce:   make(map[string]time.Time),
 		debounceMs: 300 * time.Millisecond,
@@ -54,8 +57,18 @@ func (w *Watcher) run() {
 			if !ok {
 				return
 			}
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				w.handleChange(event.Name)
+			// Handle Write, Create, and Rename events (macOS editors often use atomic saves)
+			if event.Op&fsnotify.Write == fsnotify.Write ||
+				event.Op&fsnotify.Create == fsnotify.Create ||
+				event.Op&fsnotify.Rename == fsnotify.Rename {
+				// Check if this is a file we're watching
+				w.mu.Lock()
+				isWatched := w.files[event.Name]
+				w.mu.Unlock()
+				
+				if isWatched {
+					w.handleChange(event.Name)
+				}
 			}
 		case <-w.watcher.Errors:
 			// Log error but continue
@@ -82,7 +95,7 @@ func (w *Watcher) handleChange(path string) {
 	}
 }
 
-// AddFile starts watching a file
+// AddFile starts watching a file by watching its parent directory
 func (w *Watcher) AddFile(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -91,10 +104,19 @@ func (w *Watcher) AddFile(path string) error {
 		return nil
 	}
 
-	if err := w.watcher.Add(path); err != nil {
-		return err
+	// Watch the parent directory instead of the file itself
+	// This is more reliable on macOS with editors that use atomic saves
+	dir := filepath.Dir(path)
+
+	// Add directory to watcher if not already watched
+	if len(w.dirs[dir]) == 0 {
+		if err := w.watcher.Add(dir); err != nil {
+			return err
+		}
 	}
 
+	// Track this file in the directory
+	w.dirs[dir] = append(w.dirs[dir], path)
 	w.files[path] = true
 	return nil
 }
