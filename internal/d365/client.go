@@ -33,7 +33,7 @@ func (c *Client) UpdateToken(token string) {
 }
 
 // doRequest performs an HTTP request with authorization
-func (c *Client) doRequest(method, path string, body interface{}) ([]byte, error) {
+func (c *Client) doRequest(method, path string, body any) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)

@@ -7,6 +7,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type ThemeColor uint8
+
+const (
+	Primary   ThemeColor = 33  // Blue-ish
+	Secondary ThemeColor = 39  // Cyan-ish
+	Accent    ThemeColor = 141 // Magenta accent
+	Success   ThemeColor = 82  // Green
+	Warning   ThemeColor = 214 // Orange
+	Error     ThemeColor = 196 // Red
+	Muted     ThemeColor = 244 // Gray
+	Surface   ThemeColor = 236 // Dark panel background
+)
+
 var (
 	titleStyle = lipgloss.NewStyle().
 			Align(lipgloss.Center).
@@ -41,7 +54,7 @@ var (
 	mainBorderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")).
-			Padding(2, 1, 0, 1) // Top, Right, Bottom, Left
+			Padding(1, 2)
 
 	contentBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -93,10 +106,9 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("235")).
 				Background(lipgloss.Color("63")).
-				Padding(0)
+				Padding(0, 1)
 
 	statusBarContainerStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("237")).
 				MarginTop(1)
 )
 
@@ -135,7 +147,7 @@ func (m Model) renderStatusBar(width int) string {
 	// Calculate available space for message
 	stateWidth := lipgloss.Width(stateSection)
 	countWidth := lipgloss.Width(countSection)
-	messageWidth := width - stateWidth - countWidth - 2 // 2 for spacing
+	messageWidth := width - stateWidth - countWidth
 
 	if messageWidth < 10 {
 		messageWidth = 10
@@ -143,7 +155,7 @@ func (m Model) renderStatusBar(width int) string {
 
 	messageSection := statusBarMessageStyle.Width(messageWidth).Render(message)
 
-	// Join sections
+	// Join sections - this will fill the full width
 	statusBar := lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		stateSection,
@@ -151,7 +163,7 @@ func (m Model) renderStatusBar(width int) string {
 		countSection,
 	)
 
-	return statusBarContainerStyle.Width(width).Render(statusBar)
+	return statusBar
 }
 
 // View renders the UI
@@ -174,10 +186,19 @@ func (m Model) View() string {
 	}
 
 	statusBar := m.renderStatusBar(m.width - 12) // Account for main border and padding
-	contentWithStatus := lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
+	contentWithStatus := lipgloss.JoinVertical(lipgloss.Left, content, "", statusBar)
 
 	// Wrap in main border
-	return mainBorderStyle.Width(m.width - 4).Render(contentWithStatus)
+	bordered := mainBorderStyle.Render(contentWithStatus)
+
+	// Center the entire UI on screen
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		bordered,
+	)
 }
 
 func (m Model) viewEnvironmentSelect() string {
