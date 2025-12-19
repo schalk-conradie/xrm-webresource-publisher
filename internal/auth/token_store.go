@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"d365tui/internal/config"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/config"
 )
 
 // Token represents an OAuth token

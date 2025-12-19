@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"d365tui/internal/tui"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

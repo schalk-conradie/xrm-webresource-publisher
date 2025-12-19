@@ -1,4 +1,4 @@
-module d365tui
+module codeberg.org/schalkuz/xrm-webresource-publisher
 
 go 1.24.0
 

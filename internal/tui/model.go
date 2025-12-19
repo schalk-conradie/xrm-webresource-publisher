@@ -4,10 +4,10 @@ import (
 	"sort"
 	"strings"
 
-	"d365tui/internal/auth"
-	"d365tui/internal/config"
-	"d365tui/internal/d365"
-	"d365tui/internal/watcher"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/auth"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/config"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/d365"
+	"codeberg.org/schalkuz/xrm-webresource-publisher/internal/watcher"
 
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/spinner"
