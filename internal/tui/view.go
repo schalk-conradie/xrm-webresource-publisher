@@ -187,13 +187,18 @@ func (m Model) viewList() string {
 				res := node.Resource
 				binding := m.config.GetBinding(m.config.CurrentEnvironment, res.ID)
 
-				status := unboundStyle.Render("[unbound]")
-				if binding != nil {
+				// Check if currently publishing
+				var status string
+				if m.publishing[res.ID] {
+					status = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(m.spinner.View() + " [publishing]")
+				} else if binding != nil {
 					if binding.AutoPublish {
 						status = boundStyle.Render("[auto]")
 					} else {
 						status = boundStyle.Render("[bound]")
 					}
+				} else {
+					status = unboundStyle.Render("[unbound]")
 				}
 
 				line = fmt.Sprintf("%s  %s %s", indent, node.Name, status)

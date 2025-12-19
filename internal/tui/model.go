@@ -73,6 +73,7 @@ type Model struct {
 	filepicker       filepicker.Model
 	bindingResource  *d365.WebResource
 	editingEnvName   string
+	publishing       map[string]bool // tracks which resource IDs are currently publishing
 	width            int
 	height           int
 	err              error
@@ -102,6 +103,7 @@ func NewModel() Model {
 		width:           80,
 		height:          24,
 		expandedFolders: make(map[string]bool),
+		publishing:      make(map[string]bool),
 	}
 }
 

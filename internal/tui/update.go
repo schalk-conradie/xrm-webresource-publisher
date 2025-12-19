@@ -23,9 +23,10 @@ type (
 	tokenMsg         *auth.Token
 	resourcesMsg     []d365.WebResource
 	publishResultMsg struct {
-		success bool
-		err     error
-		path    string
+		success    bool
+		err        error
+		path       string
+		resourceID string
 	}
 	errMsg          error
 	statusClearMsg  struct{}
@@ -82,6 +83,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case publishResultMsg:
+		// Remove from publishing map
+		if msg.resourceID != "" {
+			delete(m.publishing, msg.resourceID)
+		}
 		if msg.success {
 			m.status = fmt.Sprintf("Published: %s", filepath.Base(msg.path))
 			m.statusIsError = false
@@ -91,7 +96,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case fileChangeMsg:
-		return m, m.handleFileChange(string(msg))
+		// Mark resources as publishing if they have auto-publish enabled
+		path := string(msg)
+		bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+		for _, b := range bindings {
+			absPath, _ := filepath.Abs(b.LocalPath)
+			if absPath == path && b.AutoPublish {
+				m.publishing[b.WebResourceID] = true
+				break
+			}
+		}
+		return m, m.handleFileChange(path)
 
 	case errMsg:
 		m.status = fmt.Sprintf("Error: %v", msg)
@@ -369,6 +384,8 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.resourceSelected < len(m.displayItems) {
 			item := m.displayItems[m.resourceSelected]
 			if !item.Node.IsFolder && item.Resource != nil {
+				// Mark as publishing
+				m.publishing[item.Resource.ID] = true
 				return m, m.publishResource(*item.Resource)
 			} else {
 				m.status = "Select a file to publish"
@@ -576,24 +593,24 @@ func (m Model) publishResource(res d365.WebResource) tea.Cmd {
 
 		content, err := os.ReadFile(binding.LocalPath)
 		if err != nil {
-			return publishResultMsg{success: false, err: err, path: binding.LocalPath}
+			return publishResultMsg{success: false, err: err, path: binding.LocalPath, resourceID: res.ID}
 		}
 
 		encoded := base64.StdEncoding.EncodeToString(content)
 
 		if err := client.UpdateWebResourceContent(res.ID, encoded); err != nil {
-			return publishResultMsg{success: false, err: err, path: binding.LocalPath}
+			return publishResultMsg{success: false, err: err, path: binding.LocalPath, resourceID: res.ID}
 		}
 
 		if err := client.PublishWebResource(res.ID); err != nil {
-			return publishResultMsg{success: false, err: err, path: binding.LocalPath}
+			return publishResultMsg{success: false, err: err, path: binding.LocalPath, resourceID: res.ID}
 		}
 
 		// Increment version
 		newVersion := incrementVersion(binding.LastKnownVersion)
 		cfg.UpdateBindingVersion(cfg.CurrentEnvironment, res.ID, newVersion)
 
-		return publishResultMsg{success: true, path: binding.LocalPath}
+		return publishResultMsg{success: true, path: binding.LocalPath, resourceID: res.ID}
 	}
 }
 
@@ -612,23 +629,23 @@ func (m Model) handleFileChange(path string) tea.Cmd {
 					if res.ID == b.WebResourceID {
 						content, err := os.ReadFile(path)
 						if err != nil {
-							return publishResultMsg{success: false, err: err, path: path}
+							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
 						}
 
 						encoded := base64.StdEncoding.EncodeToString(content)
 
 						if err := client.UpdateWebResourceContent(res.ID, encoded); err != nil {
-							return publishResultMsg{success: false, err: err, path: path}
+							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
 						}
 
 						if err := client.PublishWebResource(res.ID); err != nil {
-							return publishResultMsg{success: false, err: err, path: path}
+							return publishResultMsg{success: false, err: err, path: path, resourceID: res.ID}
 						}
 
 						newVersion := incrementVersion(b.LastKnownVersion)
 						cfg.UpdateBindingVersion(cfg.CurrentEnvironment, res.ID, newVersion)
 
-						return publishResultMsg{success: true, path: path}
+						return publishResultMsg{success: true, path: path, resourceID: res.ID}
 					}
 				}
 			}
