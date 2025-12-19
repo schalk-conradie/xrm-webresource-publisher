@@ -7,105 +7,113 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type ThemeColor uint8
-
 const (
-	Primary   ThemeColor = 33  // Blue-ish
-	Secondary ThemeColor = 39  // Cyan-ish
-	Accent    ThemeColor = 141 // Magenta accent
-	Success   ThemeColor = 82  // Green
-	Warning   ThemeColor = 214 // Orange
-	Error     ThemeColor = 196 // Red
-	Muted     ThemeColor = 244 // Gray
-	Surface   ThemeColor = 236 // Dark panel background
+	COLOR_Primary     = lipgloss.Color("33")  // Blue-ish
+	COLOR_Secondary   = lipgloss.Color("39")  // Cyan-ish
+	COLOR_Accent      = lipgloss.Color("141") // Magenta accent
+	COLOR_AccentLight = lipgloss.Color("57")  // Lighter accent for selections
+	COLOR_Success     = lipgloss.Color("82")  // Green
+	COLOR_Warning     = lipgloss.Color("214") // Orange
+	COLOR_Error       = lipgloss.Color("196") // Red
+	COLOR_Muted       = lipgloss.Color("244") // Gray
+	COLOR_MutedDark   = lipgloss.Color("241") // Darker gray
+	COLOR_MutedLight  = lipgloss.Color("252") // Lighter gray
+	COLOR_Surface     = lipgloss.Color("236") // Dark panel background
+	COLOR_SurfaceAlt  = lipgloss.Color("237") // Alternative dark surface
+	COLOR_Border      = lipgloss.Color("240") // Border color
+	COLOR_BorderLight = lipgloss.Color("63")  // Lighter border
+	COLOR_TextBright  = lipgloss.Color("229") // Bright text
+	COLOR_TextDark    = lipgloss.Color("235") // Dark text
+	COLOR_TextWhite   = lipgloss.Color("255") // White text
+	COLOR_Pink        = lipgloss.Color("205") // Pink/Magenta title
 )
 
 var (
 	titleStyle = lipgloss.NewStyle().
 			Align(lipgloss.Center).
 			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			Background(lipgloss.Color("235")).
+			Foreground(COLOR_Pink).
+			Background(COLOR_TextDark).
 			Padding(0, 1)
 
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57")).
+			Foreground(COLOR_TextBright).
+			Background(COLOR_AccentLight).
 			Bold(true)
 
 	normalStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
+			Foreground(COLOR_MutedLight)
 
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(COLOR_MutedDark)
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(COLOR_MutedDark).
 			Padding(0, 1).
 			MaxWidth(80) // Allow text to wrap instead of extending beyond
 
 	boundStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42"))
+			Foreground(COLOR_Success)
 
 	unboundStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(COLOR_MutedDark)
 
 	// Border styles
 	mainBorderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("63")).
+			BorderForeground(COLOR_BorderLight).
 			Padding(1, 2)
 
 	contentBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			BorderForeground(COLOR_Border).
 			Padding(0, 1)
 
 	// Tab styles
 	activeTabStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57")).
+			Foreground(COLOR_TextBright).
+			Background(COLOR_AccentLight).
 			Padding(0, 2)
 
 	inactiveTabStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
-				Background(lipgloss.Color("235")).
+				Foreground(COLOR_MutedDark).
+				Background(COLOR_TextDark).
 				Padding(0, 2)
 
 	tabContainerStyle = lipgloss.NewStyle().
 				Border(lipgloss.NormalBorder(), false, false, true, false).
-				BorderForeground(lipgloss.Color("240")).
+				BorderForeground(COLOR_Border).
 				MarginBottom(1)
 
 	// Status bar styles (Lualine-inspired)
 	statusBarReadyStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("235")).
-				Background(lipgloss.Color("42")).
+				Foreground(COLOR_TextDark).
+				Background(COLOR_Success).
 				Padding(0, 1)
 
 	statusBarPublishingStyle = lipgloss.NewStyle().
 					Bold(true).
-					Foreground(lipgloss.Color("235")).
-					Background(lipgloss.Color("214")).
+					Foreground(COLOR_TextDark).
+					Background(COLOR_Warning).
 					Padding(0, 1)
 
 	statusBarErrorStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("255")).
-				Background(lipgloss.Color("196")).
+				Foreground(COLOR_TextWhite).
+				Background(COLOR_Error).
 				Padding(0, 1)
 
 	statusBarMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252")).
-				Background(lipgloss.Color("237")).
+				Foreground(COLOR_MutedLight).
+				Background(COLOR_SurfaceAlt).
 				Padding(0, 1)
 
 	statusBarCountStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("235")).
-				Background(lipgloss.Color("63")).
+				Foreground(COLOR_TextDark).
+				Background(COLOR_BorderLight).
 				Padding(0, 1)
 
 	statusBarContainerStyle = lipgloss.NewStyle().
@@ -147,11 +155,7 @@ func (m Model) renderStatusBar(width int) string {
 	// Calculate available space for message
 	stateWidth := lipgloss.Width(stateSection)
 	countWidth := lipgloss.Width(countSection)
-	messageWidth := width - stateWidth - countWidth
-
-	if messageWidth < 10 {
-		messageWidth = 10
-	}
+	messageWidth := max(width-stateWidth-countWidth, 10)
 
 	messageSection := statusBarMessageStyle.Width(messageWidth).Render(message)
 
@@ -387,7 +391,7 @@ func (m Model) viewBindFilesTab(width, height int) string {
 				// Check if currently publishing
 				var status string
 				if m.publishing[res.ID] {
-					status = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(m.spinner.View() + " [publishing]")
+					status = lipgloss.NewStyle().Foreground(COLOR_Warning).Render(m.spinner.View() + " [publishing]")
 				} else if binding != nil {
 					if binding.AutoPublish {
 						status = boundStyle.Render("[auto]")
@@ -458,7 +462,7 @@ func (m Model) viewFileListTab(width, height int) string {
 			// Status indicators
 			var status string
 			if m.publishing[binding.WebResourceID] {
-				status = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(m.spinner.View() + " [publishing]")
+				status = lipgloss.NewStyle().Foreground(COLOR_Warning).Render(m.spinner.View() + " [publishing]")
 			} else if binding.AutoPublish {
 				status = boundStyle.Render("[auto]")
 			} else {
