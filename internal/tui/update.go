@@ -20,7 +20,6 @@ import (
 
 // Messages
 type (
-	deviceCodeMsg    *auth.DeviceCodeResponse
 	tokenMsg         *auth.Token
 	resourcesMsg     []d365.WebResource
 	publishResultMsg struct {
@@ -61,10 +60,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
-
-	case deviceCodeMsg:
-		m.deviceCode = msg
-		return m, m.pollForToken()
 
 	case tokenMsg:
 		m.token = msg
@@ -299,7 +294,7 @@ func (m Model) handleEnvSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Need to authenticate
 			m.state = StateAuth
-			return m, m.requestDeviceCode()
+			return m, m.authenticateInteractive()
 		}
 	}
 
@@ -312,7 +307,6 @@ func (m Model) handleAuthKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		m.state = StateEnvironmentSelect
-		m.deviceCode = nil
 	}
 	return m, nil
 }
@@ -516,30 +510,13 @@ func (m Model) handleFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // Commands
-func (m Model) requestDeviceCode() tea.Cmd {
+func (m Model) authenticateInteractive() tea.Cmd {
 	return func() tea.Msg {
 		env := m.config.GetEnvironment(m.config.CurrentEnvironment)
 		if env == nil {
 			return errMsg(fmt.Errorf("environment not found"))
 		}
-		code, err := auth.RequestDeviceCode(env.URL)
-		if err != nil {
-			return errMsg(err)
-		}
-		return deviceCodeMsg(code)
-	}
-}
-
-func (m Model) pollForToken() tea.Cmd {
-	return func() tea.Msg {
-		if m.deviceCode == nil {
-			return errMsg(fmt.Errorf("no device code"))
-		}
-		env := m.config.GetEnvironment(m.config.CurrentEnvironment)
-		if env == nil {
-			return errMsg(fmt.Errorf("environment not found"))
-		}
-		token, err := auth.PollForToken(m.deviceCode.DeviceCode, env.URL, m.deviceCode.Interval)
+		token, err := auth.AcquireTokenInteractive(env.URL)
 		if err != nil {
 			return errMsg(err)
 		}

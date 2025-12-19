@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-const (
-	clientID      = "51f81489-12ee-4a9e-aaae-a2591f45987d"
-	authorityBase = "https://login.microsoftonline.com/common/oauth2/v2.0"
-)
 
 // DeviceCodeResponse represents the device code response from Azure AD
 type DeviceCodeResponse struct {
@@ -40,11 +36,11 @@ func RequestDeviceCode(orgURL string) (*DeviceCodeResponse, error) {
 	scope := orgURL + "/.default"
 
 	data := url.Values{}
-	data.Set("client_id", clientID)
+	data.Set("client_id", ClientID)
 	data.Set("scope", scope)
 
 	resp, err := http.Post(
-		authorityBase+"/devicecode",
+		AuthorityBase+"/oauth2/v2.0/devicecode",
 		"application/x-www-form-urlencoded",
 		strings.NewReader(data.Encode()),
 	)
@@ -75,7 +71,7 @@ func PollForToken(deviceCode string, orgURL string, interval int) (*Token, error
 	scope := orgURL + "/.default"
 
 	data := url.Values{}
-	data.Set("client_id", clientID)
+	data.Set("client_id", ClientID)
 	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
 	data.Set("device_code", deviceCode)
 	data.Set("scope", scope)
@@ -91,7 +87,7 @@ func PollForToken(deviceCode string, orgURL string, interval int) (*Token, error
 			return nil, errors.New("authentication timed out")
 		case <-ticker.C:
 			resp, err := http.Post(
-				authorityBase+"/token",
+				AuthorityBase+"/oauth2/v2.0/token",
 				"application/x-www-form-urlencoded",
 				strings.NewReader(data.Encode()),
 			)
@@ -129,18 +125,19 @@ func PollForToken(deviceCode string, orgURL string, interval int) (*Token, error
 	}
 }
 
-// RefreshAccessToken refreshes an expired token
-func RefreshAccessToken(refreshToken, orgURL string) (*Token, error) {
+// RefreshAccessTokenLegacy refreshes an expired token using the old device code flow method
+// This is kept for backwards compatibility but the MSAL approach in browser_auth.go should be preferred
+func RefreshAccessTokenLegacy(refreshToken, orgURL string) (*Token, error) {
 	scope := orgURL + "/.default"
 
 	data := url.Values{}
-	data.Set("client_id", clientID)
+	data.Set("client_id", ClientID)
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
 	data.Set("scope", scope)
 
 	resp, err := http.Post(
-		authorityBase+"/token",
+		AuthorityBase+"/oauth2/v2.0/token",
 		"application/x-www-form-urlencoded",
 		strings.NewReader(data.Encode()),
 	)

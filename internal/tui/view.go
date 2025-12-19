@@ -124,19 +124,11 @@ func (m Model) viewAuth() string {
 	b.WriteString(titleStyle.Render("Authentication Required"))
 	b.WriteString("\n\n")
 
-	if m.deviceCode != nil {
-		b.WriteString("To sign in, use a web browser to open:\n")
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.deviceCode.VerificationURI))
-		b.WriteString("\n\n")
-		b.WriteString("And enter the code:\n")
-		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Render(m.deviceCode.UserCode))
-		b.WriteString("\n\n")
-		b.WriteString(m.spinner.View())
-		b.WriteString(" Waiting for authentication...")
-	} else {
-		b.WriteString(m.spinner.View())
-		b.WriteString(" Requesting device code...")
-	}
+	b.WriteString(m.spinner.View())
+	b.WriteString(" Opening browser for authentication...")
+	b.WriteString("\n\n")
+	b.WriteString("A browser window will open for you to sign in.\n")
+	b.WriteString("After signing in, you can return to this application.")
 
 	b.WriteString("\n\n")
 	b.WriteString(helpStyle.Render("esc: back • q: quit"))

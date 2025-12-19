@@ -72,7 +72,6 @@ type Model struct {
 	spinner          spinner.Model
 	filepicker       filepicker.Model
 	bindingResource  *d365.WebResource
-	deviceCode       *auth.DeviceCodeResponse
 	editingEnvName   string
 	width            int
 	height           int
