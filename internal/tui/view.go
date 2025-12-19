@@ -26,15 +26,10 @@ var (
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42"))
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
-
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
-			Padding(0, 1)
+			Padding(0, 1).
+			MaxWidth(80) // Allow text to wrap instead of extending beyond
 
 	boundStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42"))
@@ -46,18 +41,12 @@ var (
 	mainBorderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")).
-			Padding(1, 2)
+			Padding(2, 1, 0, 1) // Top, Right, Bottom, Left
 
 	contentBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(0, 1).
-			MarginTop(1)
 
 	// Tab styles
 	activeTabStyle = lipgloss.NewStyle().
@@ -75,17 +64,104 @@ var (
 				Border(lipgloss.NormalBorder(), false, false, true, false).
 				BorderForeground(lipgloss.Color("240")).
 				MarginBottom(1)
+
+	// Status bar styles (Lualine-inspired)
+	statusBarReadyStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("235")).
+				Background(lipgloss.Color("42")).
+				Padding(0, 1)
+
+	statusBarPublishingStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("235")).
+					Background(lipgloss.Color("214")).
+					Padding(0, 1)
+
+	statusBarErrorStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("255")).
+				Background(lipgloss.Color("196")).
+				Padding(0, 1)
+
+	statusBarMessageStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("237")).
+				Padding(0, 1)
+
+	statusBarCountStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("235")).
+				Background(lipgloss.Color("63")).
+				Padding(0)
+
+	statusBarContainerStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				MarginTop(1)
 )
+
+// renderStatusBar creates a Lualine-style status bar
+func (m Model) renderStatusBar(width int) string {
+	// Determine status state
+	var stateSection string
+	isPublishing := false
+	for _, publishing := range m.publishing {
+		if publishing {
+			isPublishing = true
+			break
+		}
+	}
+
+	if m.statusIsError {
+		stateSection = statusBarErrorStyle.Render(" ERROR ")
+	} else if isPublishing {
+		stateSection = statusBarPublishingStyle.Render(" PUBLISHING ")
+	} else {
+		stateSection = statusBarReadyStyle.Render(" READY ")
+	}
+
+	// Count section (resources found)
+	var countSection string
+	if m.state == StateList && len(m.resources) > 0 {
+		countSection = statusBarCountStyle.Render(fmt.Sprintf(" %d resources ", len(m.resources)))
+	}
+
+	// Message section (middle)
+	message := m.status
+	if message == "" {
+		message = "Ready"
+	}
+
+	// Calculate available space for message
+	stateWidth := lipgloss.Width(stateSection)
+	countWidth := lipgloss.Width(countSection)
+	messageWidth := width - stateWidth - countWidth - 2 // 2 for spacing
+
+	if messageWidth < 10 {
+		messageWidth = 10
+	}
+
+	messageSection := statusBarMessageStyle.Width(messageWidth).Render(message)
+
+	// Join sections
+	statusBar := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		stateSection,
+		messageSection,
+		countSection,
+	)
+
+	return statusBarContainerStyle.Width(width).Render(statusBar)
+}
 
 // View renders the UI
 func (m Model) View() string {
-	var content string
-
 	// File picker needs full screen - don't wrap in borders
 	if m.state == StateFilePicker {
 		return m.viewFilePicker()
 	}
 
+	var content string
 	switch m.state {
 	case StateEnvironmentSelect:
 		content = m.viewEnvironmentSelect()
@@ -97,31 +173,18 @@ func (m Model) View() string {
 		content = m.viewBinding()
 	}
 
-	// Wrap content in main border
-	mainContent := mainBorderStyle.Width(m.width - 4).Render(content)
+	statusBar := m.renderStatusBar(m.width - 12) // Account for main border and padding
+	contentWithStatus := lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 
-	// Status bar
-	var statusBar string
-	if m.status != "" {
-		if m.statusIsError {
-			statusBar = statusBarStyle.Width(m.width - 4).Render(errorStyle.Render("● ") + m.status)
-		} else {
-			statusBar = statusBarStyle.Width(m.width - 4).Render(statusStyle.Render("● ") + m.status)
-		}
-	}
-
-	if statusBar != "" {
-		return lipgloss.JoinVertical(lipgloss.Left, mainContent, statusBar)
-	}
-	return mainContent
+	// Wrap in main border
+	return mainBorderStyle.Width(m.width - 4).Render(contentWithStatus)
 }
 
 func (m Model) viewEnvironmentSelect() string {
-	var sections []string
+	availableWidth := m.width - 12 // Main border (4) + content padding (8)
 
 	// Title
 	title := titleStyle.Render("D365 Web Resource Publisher")
-	sections = append(sections, title)
 
 	// Input mode
 	if m.inputMode != InputNone {
@@ -137,10 +200,9 @@ func (m Model) viewEnvironmentSelect() string {
 			}
 		}
 		inputContent.WriteString(m.textInput.View())
-		inputBox := contentBoxStyle.Width(m.width - 12).Render(inputContent.String())
-		sections = append(sections, inputBox)
-		sections = append(sections, helpStyle.Render("enter: confirm • esc: cancel"))
-		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+		inputBox := contentBoxStyle.Width(availableWidth).Render(inputContent.String())
+		helpRendered := helpStyle.Width(availableWidth).Render("enter: confirm • esc: cancel")
+		return lipgloss.JoinVertical(lipgloss.Left, title, inputBox, helpRendered)
 	}
 
 	// Environment list
@@ -162,19 +224,17 @@ func (m Model) viewEnvironmentSelect() string {
 		}
 	}
 
-	envBox := contentBoxStyle.Width(m.width - 12).Render(envContent.String())
-	sections = append(sections, envBox)
-	sections = append(sections, helpStyle.Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • q: quit"))
+	envBox := contentBoxStyle.Width(availableWidth).Render(envContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • q: quit")
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return lipgloss.JoinVertical(lipgloss.Left, title, envBox, helpRendered)
 }
 
 func (m Model) viewAuth() string {
-	var sections []string
+	availableWidth := m.width - 12 // Main border (4) + content padding (8)
 
 	// Title
 	title := titleStyle.Render("Authentication Required")
-	sections = append(sections, title)
 
 	// Auth content
 	var authContent strings.Builder
@@ -183,15 +243,15 @@ func (m Model) viewAuth() string {
 	authContent.WriteString("A browser window will open for you to sign in.\n")
 	authContent.WriteString("After signing in, you can return to this application.")
 
-	authBox := contentBoxStyle.Width(m.width - 12).Render(authContent.String())
-	sections = append(sections, authBox)
-	sections = append(sections, helpStyle.Render("esc: back • q: quit"))
+	authBox := contentBoxStyle.Width(availableWidth).Render(authContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("esc: back • q: quit")
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return lipgloss.JoinVertical(lipgloss.Left, title, authBox, helpRendered)
 }
 
 func (m Model) viewList() string {
-	var sections []string
+	// Calculate available width accounting for borders and padding
+	availableWidth := m.width - 12 // Main border (4) + content padding (8)
 
 	// Title
 	env := m.config.GetEnvironment(m.config.CurrentEnvironment)
@@ -201,22 +261,9 @@ func (m Model) viewList() string {
 	} else {
 		title = titleStyle.Render("Web Resources")
 	}
-	sections = append(sections, title)
 
 	// Tabs
-	tabs := m.renderTabs()
-	sections = append(sections, tabs)
-
-	// Tab content
-	var content string
-	switch m.bindingTab {
-	case BindingTabBind:
-		content = m.viewBindFilesTab()
-	case BindingTabList:
-		content = m.viewFileListTab()
-	}
-
-	sections = append(sections, content)
+	tabs := m.renderTabs(availableWidth)
 
 	// Help text based on active tab
 	var helpText string
@@ -225,12 +272,35 @@ func (m Model) viewList() string {
 	} else {
 		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • esc: back • q: quit"
 	}
-	sections = append(sections, helpStyle.Render(helpText))
+	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	// Calculate heights
+	titleHeight := lipgloss.Height(title)
+	tabsHeight := lipgloss.Height(tabs)
+	helpHeight := lipgloss.Height(helpRendered)
+	statusBarHeight := 2 // Status bar takes approximately 2 lines (bar itself + margin)
+
+	// Account for main border padding (2 top + 2 bottom), spacing between elements, content box border, and status bar
+	fixedHeight := titleHeight + tabsHeight + helpHeight + statusBarHeight + 8 // 2 padding top, 2 padding bottom, 2 for content border, 2 for spacing
+	contentHeight := m.height - fixedHeight
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+
+	// Tab content
+	var content string
+	switch m.bindingTab {
+	case BindingTabBind:
+		content = m.viewBindFilesTab(availableWidth, contentHeight)
+	case BindingTabList:
+		content = m.viewFileListTab(availableWidth, contentHeight)
+	}
+
+	// Join all sections
+	return lipgloss.JoinVertical(lipgloss.Left, title, tabs, content, helpRendered)
 }
 
-func (m Model) renderTabs() string {
+func (m Model) renderTabs(width int) string {
 	var tabs []string
 
 	// Tab 1: Bind Files
@@ -248,19 +318,19 @@ func (m Model) renderTabs() string {
 	}
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	return tabContainerStyle.Width(m.width - 12).Render(row)
+	return tabContainerStyle.Width(width).Render(row)
 }
 
-func (m Model) viewBindFilesTab() string {
+func (m Model) viewBindFilesTab(width, height int) string {
 	var resourceContent strings.Builder
 
 	if len(m.displayItems) == 0 {
 		resourceContent.WriteString(dimStyle.Render("No web resources found"))
 	} else {
-		// Calculate visible range for scrolling
-		visibleLines := m.height - 14
-		if visibleLines < 5 {
-			visibleLines = 5
+		// Calculate visible range for scrolling based on actual available height
+		visibleLines := height - 2 // Account for content box border
+		if visibleLines < 3 {
+			visibleLines = 3
 		}
 
 		start := 0
@@ -323,38 +393,40 @@ func (m Model) viewBindFilesTab() string {
 		}
 	}
 
-	return contentBoxStyle.Width(m.width - 12).Height(m.height - 14).Render(resourceContent.String())
+	return contentBoxStyle.Width(width).Height(height).Render(resourceContent.String())
 }
 
-func (m Model) viewFileListTab() string {
+func (m Model) viewFileListTab(width, height int) string {
 	var listContent strings.Builder
 
 	// Get all bindings for current environment
 	bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
-	
+
 	if len(bindings) == 0 {
 		listContent.WriteString(dimStyle.Render("No bound files\n"))
 		listContent.WriteString(dimStyle.Render("Switch to 'Bind Files' tab to bind web resources"))
 	} else {
-		// Calculate visible range for scrolling
-		visibleLines := m.height - 14
-		if visibleLines < 5 {
-			visibleLines = 5
+		// Calculate visible range for scrolling based on actual available height
+		// Each binding takes 2 lines (name + path), plus 1 line spacing = 3 lines per item
+		linesPerItem := 3
+		visibleItems := (height - 2) / linesPerItem // Account for content box border
+		if visibleItems < 1 {
+			visibleItems = 1
 		}
 
 		start := 0
-		if m.bindingSelected >= visibleLines {
-			start = m.bindingSelected - visibleLines + 1
+		if m.bindingSelected >= visibleItems {
+			start = m.bindingSelected - visibleItems + 1
 		}
 
-		end := start + visibleLines
+		end := start + visibleItems
 		if end > len(bindings) {
 			end = len(bindings)
 		}
 
 		for i := start; i < end; i++ {
 			binding := bindings[i]
-			
+
 			// Build the line
 			var line strings.Builder
 			line.WriteString(binding.WebResourceName)
@@ -379,26 +451,25 @@ func (m Model) viewFileListTab() string {
 			} else {
 				listContent.WriteString(normalStyle.Render("  " + lineStr))
 			}
-			
+
 			if i < end-1 {
 				listContent.WriteString("\n\n")
 			}
 		}
 
-		if len(bindings) > visibleLines {
+		if len(bindings) > visibleItems {
 			listContent.WriteString(dimStyle.Render(fmt.Sprintf("\n\n[%d/%d]", m.bindingSelected+1, len(bindings))))
 		}
 	}
 
-	return contentBoxStyle.Width(m.width - 12).Height(m.height - 14).Render(listContent.String())
+	return contentBoxStyle.Width(width).Height(height).Render(listContent.String())
 }
 
 func (m Model) viewBinding() string {
-	var sections []string
+	availableWidth := m.width - 12 // Main border (4) + content padding (8)
 
 	// Title
 	title := titleStyle.Render("Bind Web Resource")
-	sections = append(sections, title)
 
 	// Binding content
 	var bindContent strings.Builder
@@ -409,11 +480,10 @@ func (m Model) viewBinding() string {
 	bindContent.WriteString("Local file path:\n")
 	bindContent.WriteString(m.textInput.View())
 
-	bindBox := contentBoxStyle.Width(m.width - 12).Render(bindContent.String())
-	sections = append(sections, bindBox)
-	sections = append(sections, helpStyle.Render("enter: confirm • esc: cancel"))
+	bindBox := contentBoxStyle.Width(availableWidth).Render(bindContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("enter: confirm • esc: cancel")
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return lipgloss.JoinVertical(lipgloss.Left, title, bindBox, helpRendered)
 }
 
 func (m Model) viewFilePicker() string {
