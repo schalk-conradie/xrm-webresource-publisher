@@ -11,7 +11,7 @@ const (
 	COLOR_Primary     = lipgloss.Color("33")  // Blue-ish
 	COLOR_Secondary   = lipgloss.Color("39")  // Cyan-ish
 	COLOR_Accent      = lipgloss.Color("141") // Magenta accent
-	COLOR_AccentLight = lipgloss.Color("57")  // Lighter accent for selections
+	COLOR_AccentLight = lipgloss.Color("53")  // Lighter accent for selections
 	COLOR_Success     = lipgloss.Color("82")  // Green
 	COLOR_Warning     = lipgloss.Color("214") // Orange
 	COLOR_Error       = lipgloss.Color("196") // Red
