@@ -24,6 +24,12 @@ const (
 	StateBinding
 	StateFilePicker
 	StateSolutionPicker
+	StateCreateModeSelect
+	StateCreateFilePicker
+	StateCreateFolderPicker
+	StateCreateNameInput
+	StateCreatePrefixInput
+	StateCreateConfirm
 )
 
 // InputMode represents the current input mode
@@ -44,6 +50,21 @@ const (
 	BindingTabList BindingTab = iota
 	BindingTabBind
 )
+
+// CreateMode represents single file or folder mode
+type CreateMode int
+
+const (
+	CreateModeSingleFile CreateMode = iota
+	CreateModeFolder
+)
+
+// CreateFileInfo holds info about a file to be created as a web resource
+type CreateFileInfo struct {
+	LocalPath    string
+	WebResName   string
+	ResourceType d365.WebResourceType
+}
 
 // TreeNode represents a folder or file in the tree
 type TreeNode struct {
@@ -95,6 +116,15 @@ type Model struct {
 	solutionSelected int
 	solutionResource *d365.WebResource // the resource to add to a solution
 	loadingSolutions bool
+	// Create web resource
+	createMode         CreateMode
+	createModeSelected int
+	createSolution     *d365.Solution
+	createFiles        []CreateFileInfo
+	createFileSelected int
+	createPrefix       string
+	createName         string
+	creatingResources  bool
 }
 
 // NewModel creates a new application model

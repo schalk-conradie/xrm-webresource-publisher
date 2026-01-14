@@ -42,6 +42,13 @@ type (
 		solutionName string
 		resourceName string
 	}
+	createResourcesMsg struct {
+		success bool
+		err     error
+		created []string
+		failed  []string
+	}
+	folderFilesMsg []CreateFileInfo
 )
 
 // Init initializes the model
@@ -53,9 +60,12 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// Handle file picker state - it needs to receive all messages
+	// Handle file picker states - they need to receive all messages
 	if m.state == StateFilePicker {
 		return m.handleFilePicker(msg)
+	}
+	if m.state == StateCreateFilePicker || m.state == StateCreateFolderPicker {
+		return m.handleCreateFilePicker(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -169,6 +179,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.state = StateList
 		m.solutionResource = nil
+
+	case folderFilesMsg:
+		m.createFiles = msg
+		if len(msg) == 0 {
+			m.status = "No supported files found in folder"
+			m.statusIsError = true
+			m.state = StateList
+		} else {
+			m.state = StateCreatePrefixInput
+			m.textInput.SetValue(m.createPrefix)
+			m.textInput.Placeholder = "e.g., publisher_/AppName/"
+		}
+
+	case createResourcesMsg:
+		m.creatingResources = false
+		if msg.success {
+			m.status = fmt.Sprintf("Created %d web resources", len(msg.created))
+			m.statusIsError = false
+		} else {
+			if len(msg.created) > 0 {
+				m.status = fmt.Sprintf("Created %d, failed %d: %v", len(msg.created), len(msg.failed), msg.err)
+			} else {
+				m.status = fmt.Sprintf("Failed to create resources: %v", msg.err)
+			}
+			m.statusIsError = true
+		}
+		m.state = StateList
+		m.createSolution = nil
+		m.createFiles = nil
+		// Refresh the resource list
+		return m, m.fetchResources()
 	}
 
 	return m, tea.Batch(cmds...)
@@ -193,6 +234,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFilePickerKey(msg)
 	case StateSolutionPicker:
 		return m.handleSolutionPickerKey(msg)
+	case StateCreateModeSelect:
+		return m.handleCreateModeSelectKey(msg)
+	case StateCreateFilePicker, StateCreateFolderPicker:
+		return m.handleCreateFilePickerKey(msg)
+	case StateCreateNameInput:
+		return m.handleCreateNameInputKey(msg)
+	case StateCreatePrefixInput:
+		return m.handleCreatePrefixInputKey(msg)
+	case StateCreateConfirm:
+		return m.handleCreateConfirmKey(msg)
 	}
 
 	return m, nil
@@ -648,6 +699,17 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "Select a file first"
 			m.statusIsError = true
 		}
+
+	case "N":
+		// Create new web resource - first select solution
+		m.solutionSelected = 0
+		m.loadingSolutions = true
+		m.createSolution = nil
+		m.createFiles = nil
+		m.createMode = CreateModeSingleFile
+		m.createModeSelected = 0
+		m.state = StateSolutionPicker
+		return m, m.fetchSolutions()
 	}
 
 	return m, nil
@@ -750,6 +812,76 @@ func (m Model) handleFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StateList
 		m.bindingResource = nil
 		return m, nil
+	}
+
+	return m, cmd
+}
+
+func (m Model) handleCreateFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle folderFilesMsg - this comes back after scanning a folder
+	if filesMsg, ok := msg.(folderFilesMsg); ok {
+		m.createFiles = filesMsg
+		if len(filesMsg) == 0 {
+			m.status = "No supported files found in folder"
+			m.statusIsError = true
+			m.state = StateCreateModeSelect
+		} else {
+			m.state = StateCreatePrefixInput
+			m.textInput.SetValue(m.createPrefix)
+			m.textInput.Placeholder = "e.g., publisher_/AppName/"
+			m.textInput.Focus()
+		}
+		return m, nil
+	}
+
+	// Handle key messages
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" {
+			m.state = StateCreateModeSelect
+			return m, nil
+		}
+
+		// For folder picker: 's' or space selects the current directory
+		if m.state == StateCreateFolderPicker {
+			if keyMsg.String() == "s" || keyMsg.String() == " " {
+				// Select the current directory
+				currentDir := m.filepicker.CurrentDirectory
+				return m, m.scanFolderForFiles(currentDir)
+			}
+		}
+	}
+
+	// Handle window resize
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsMsg.Width
+		m.height = wsMsg.Height
+		m.filepicker.Height = wsMsg.Height - 6
+	}
+
+	// Update the filepicker with all messages
+	var cmd tea.Cmd
+	m.filepicker, cmd = m.filepicker.Update(msg)
+
+	if m.state == StateCreateFilePicker {
+		// Single file selection
+		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+			// Validate file type
+			resourceType, err := d365.GetWebResourceTypeFromExtension(path)
+			if err != nil {
+				m.status = err.Error()
+				m.statusIsError = true
+				return m, nil
+			}
+
+			m.createFiles = []CreateFileInfo{{
+				LocalPath:    path,
+				ResourceType: resourceType,
+			}}
+			m.state = StateCreateNameInput
+			m.textInput.SetValue("")
+			m.textInput.Placeholder = "e.g., publisher_/folder/filename.js"
+			return m, nil
+		}
 	}
 
 	return m, cmd
@@ -965,6 +1097,7 @@ func (m Model) handleSolutionPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.state = StateList
 		m.solutionResource = nil
+		m.createSolution = nil
 		m.solutions = nil
 		return m, nil
 
@@ -979,12 +1112,23 @@ func (m Model) handleSolutionPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		if m.solutionSelected < len(m.solutions) && m.solutionResource != nil {
+		if m.solutionSelected < len(m.solutions) {
 			solution := m.solutions[m.solutionSelected]
-			resource := m.solutionResource
-			m.status = fmt.Sprintf("Adding %s to %s...", resource.Name, solution.FriendlyName)
-			m.statusIsError = false
-			return m, m.addToSolution(solution, *resource)
+
+			// Check if this is for adding existing resource or creating new
+			if m.solutionResource != nil {
+				// Adding existing resource to solution
+				resource := m.solutionResource
+				m.status = fmt.Sprintf("Adding %s to %s...", resource.Name, solution.FriendlyName)
+				m.statusIsError = false
+				return m, m.addToSolution(solution, *resource)
+			} else {
+				// Creating new web resource - move to mode selection
+				m.createSolution = &solution
+				m.state = StateCreateModeSelect
+				m.createModeSelected = 0
+				return m, nil
+			}
 		}
 	}
 
@@ -1026,6 +1170,309 @@ func (m Model) addToSolution(solution d365.Solution, resource d365.WebResource) 
 			success:      true,
 			solutionName: solution.FriendlyName,
 			resourceName: resource.Name,
+		}
+	}
+}
+
+func (m Model) handleCreateModeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		m.state = StateList
+		m.createSolution = nil
+		return m, nil
+
+	case "up", "k":
+		if m.createModeSelected > 0 {
+			m.createModeSelected--
+		}
+
+	case "down", "j":
+		if m.createModeSelected < 1 {
+			m.createModeSelected++
+		}
+
+	case "enter":
+		if m.createModeSelected == 0 {
+			// Single file mode
+			m.createMode = CreateModeSingleFile
+			fp := filepicker.New()
+			fp.CurrentDirectory, _ = os.UserHomeDir()
+			fp.Height = m.height - 6
+			m.filepicker = fp
+			m.state = StateCreateFilePicker
+			return m, m.filepicker.Init()
+		} else {
+			// Folder mode
+			m.createMode = CreateModeFolder
+			fp := filepicker.New()
+			fp.CurrentDirectory, _ = os.UserHomeDir()
+			fp.DirAllowed = true
+			fp.FileAllowed = false
+			fp.Height = m.height - 6
+			m.filepicker = fp
+			m.state = StateCreateFolderPicker
+			return m, m.filepicker.Init()
+		}
+	}
+
+	return m, nil
+}
+
+func (m Model) handleCreateFilePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.state = StateCreateModeSelect
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.filepicker, cmd = m.filepicker.Update(msg)
+
+	if m.state == StateCreateFilePicker {
+		// Single file selection
+		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+			// Validate file type
+			resourceType, err := d365.GetWebResourceTypeFromExtension(path)
+			if err != nil {
+				m.status = err.Error()
+				m.statusIsError = true
+				return m, nil
+			}
+
+			m.createFiles = []CreateFileInfo{{
+				LocalPath:    path,
+				ResourceType: resourceType,
+			}}
+			m.state = StateCreateNameInput
+			m.textInput.SetValue("")
+			m.textInput.Placeholder = "e.g., publisher_/folder/filename.js"
+			return m, nil
+		}
+	} else {
+		// Folder selection
+		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+			// Scan folder for files
+			return m, m.scanFolderForFiles(path)
+		}
+	}
+
+	return m, cmd
+}
+
+func (m Model) handleCreateNameInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.state = StateCreateFilePicker
+		m.textInput.SetValue("")
+		return m, m.filepicker.Init()
+
+	case "enter":
+		name := strings.TrimSpace(m.textInput.Value())
+		if name == "" {
+			m.status = "Name cannot be empty"
+			m.statusIsError = true
+			return m, nil
+		}
+
+		// Update the file info with the name
+		if len(m.createFiles) > 0 {
+			m.createFiles[0].WebResName = name
+		}
+		m.state = StateCreateConfirm
+		m.createFileSelected = 0
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleCreatePrefixInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.state = StateCreateFolderPicker
+		m.textInput.SetValue("")
+		return m, m.filepicker.Init()
+
+	case "enter":
+		prefix := strings.TrimSpace(m.textInput.Value())
+		m.createPrefix = prefix
+
+		// Apply prefix to all files
+		for i := range m.createFiles {
+			m.createFiles[i].WebResName = prefix + m.createFiles[i].WebResName
+		}
+		m.state = StateCreateConfirm
+		m.createFileSelected = 0
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleCreateConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		// Go back based on mode
+		if m.createMode == CreateModeSingleFile {
+			m.state = StateCreateNameInput
+		} else {
+			m.state = StateCreatePrefixInput
+			m.textInput.SetValue(m.createPrefix)
+		}
+		return m, nil
+
+	case "up", "k":
+		if m.createFileSelected > 0 {
+			m.createFileSelected--
+		}
+
+	case "down", "j":
+		if m.createFileSelected < len(m.createFiles)-1 {
+			m.createFileSelected++
+		}
+
+	case "enter", "y":
+		// Create all the resources
+		m.creatingResources = true
+		m.status = "Creating web resources..."
+		m.statusIsError = false
+		return m, m.createWebResources()
+	}
+
+	return m, nil
+}
+
+func (m Model) scanFolderForFiles(folderPath string) tea.Cmd {
+	return func() tea.Msg {
+		var files []CreateFileInfo
+
+		err := filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			resourceType, err := d365.GetWebResourceTypeFromExtension(path)
+			if err != nil {
+				// Skip unsupported files
+				return nil
+			}
+
+			// Get relative path from folder
+			relPath, _ := filepath.Rel(folderPath, path)
+			// Convert to forward slashes for web resource naming
+			relPath = strings.ReplaceAll(relPath, string(os.PathSeparator), "/")
+
+			files = append(files, CreateFileInfo{
+				LocalPath:    path,
+				WebResName:   relPath,
+				ResourceType: resourceType,
+			})
+
+			return nil
+		})
+
+		if err != nil {
+			return errMsg(err)
+		}
+
+		return folderFilesMsg(files)
+	}
+}
+
+func (m Model) createWebResources() tea.Cmd {
+	client := m.client
+	solution := m.createSolution
+	files := m.createFiles
+	cfg := m.config
+	currentEnv := m.config.CurrentEnvironment
+
+	return func() tea.Msg {
+		if client == nil {
+			return createResourcesMsg{success: false, err: fmt.Errorf("not connected")}
+		}
+
+		var created []string
+		var failed []string
+		var lastErr error
+
+		for _, file := range files {
+			// Read file content
+			content, err := os.ReadFile(file.LocalPath)
+			if err != nil {
+				failed = append(failed, file.WebResName)
+				lastErr = err
+				continue
+			}
+
+			encoded := base64.StdEncoding.EncodeToString(content)
+
+			// Create the web resource
+			resourceID, err := client.CreateWebResource(
+				file.WebResName,
+				filepath.Base(file.WebResName),
+				encoded,
+				file.ResourceType,
+			)
+			if err != nil {
+				failed = append(failed, file.WebResName)
+				lastErr = err
+				continue
+			}
+
+			// Add to solution
+			if solution != nil {
+				if err := client.AddWebResourceToSolution(solution.UniqueName, resourceID); err != nil {
+					// Resource created but failed to add to solution
+					failed = append(failed, file.WebResName+" (add to solution)")
+					lastErr = err
+				}
+			}
+
+			// Publish the resource
+			if err := client.PublishWebResource(resourceID); err != nil {
+				// Resource created but failed to publish
+				failed = append(failed, file.WebResName+" (publish)")
+				lastErr = err
+			}
+
+			created = append(created, file.WebResName)
+
+			// Create binding
+			binding := config.Binding{
+				Environment:      currentEnv,
+				LocalPath:        file.LocalPath,
+				WebResourceName:  file.WebResName,
+				WebResourceID:    resourceID,
+				LastKnownVersion: "1.0.0",
+				AutoPublish:      true,
+			}
+			cfg.AddBinding(binding)
+		}
+
+		if len(failed) > 0 {
+			return createResourcesMsg{
+				success: false,
+				err:     lastErr,
+				created: created,
+				failed:  failed,
+			}
+		}
+
+		return createResourcesMsg{
+			success: true,
+			created: created,
 		}
 	}
 }

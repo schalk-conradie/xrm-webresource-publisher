@@ -172,7 +172,7 @@ func (m Model) renderStatusBar(width int) string {
 // View renders the UI
 func (m Model) View() string {
 	// File picker needs full screen - don't wrap in borders
-	if m.state == StateFilePicker {
+	if m.state == StateFilePicker || m.state == StateCreateFilePicker || m.state == StateCreateFolderPicker {
 		return m.viewFilePicker()
 	}
 
@@ -188,6 +188,14 @@ func (m Model) View() string {
 		content = m.viewBinding()
 	case StateSolutionPicker:
 		content = m.viewSolutionPicker()
+	case StateCreateModeSelect:
+		content = m.viewCreateModeSelect()
+	case StateCreateNameInput:
+		content = m.viewCreateNameInput()
+	case StateCreatePrefixInput:
+		content = m.viewCreatePrefixInput()
+	case StateCreateConfirm:
+		content = m.viewCreateConfirm()
 	}
 
 	statusBar := m.renderStatusBar(m.width - 12) // Account for main border and padding
@@ -294,9 +302,9 @@ func (m Model) viewList() string {
 	// Help text based on active tab
 	var helpText string
 	if m.bindingTab == BindingTabBind {
-		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • N: new • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
 	} else {
-		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • N: new • l: login • esc: back • q: quit"
 	}
 	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
@@ -512,19 +520,42 @@ func (m Model) viewBinding() string {
 func (m Model) viewFilePicker() string {
 	var b strings.Builder
 
-	// Simple title
-	b.WriteString(titleStyle.Render("Select Local File"))
-	b.WriteString("\n\n")
+	// Title based on state
+	var title string
+	var helpText string
 
-	// Binding info
-	if m.bindingResource != nil {
-		b.WriteString(fmt.Sprintf("Binding: %s\n\n", m.bindingResource.Name))
+	switch m.state {
+	case StateFilePicker:
+		title = "Select Local File"
+		helpText = "↑/↓: navigate • enter: select • esc: cancel"
+		if m.bindingResource != nil {
+			b.WriteString(titleStyle.Render(title))
+			b.WriteString("\n\n")
+			b.WriteString(fmt.Sprintf("Binding: %s\n\n", m.bindingResource.Name))
+		}
+	case StateCreateFilePicker:
+		title = "Select File to Create Web Resource"
+		helpText = "↑/↓: navigate • enter: select file • esc: back"
+		b.WriteString(titleStyle.Render(title))
+		b.WriteString("\n\n")
+	case StateCreateFolderPicker:
+		title = "Select Folder"
+		helpText = "↑/↓: navigate • enter: open folder • s/space: select current folder • esc: back"
+		b.WriteString(titleStyle.Render(title))
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(fmt.Sprintf("Current: %s", m.filepicker.CurrentDirectory)))
+		b.WriteString("\n\n")
+	default:
+		title = "Select File"
+		helpText = "↑/↓: navigate • enter: select • esc: cancel"
+		b.WriteString(titleStyle.Render(title))
+		b.WriteString("\n\n")
 	}
 
 	// File picker takes remaining space
 	b.WriteString(m.filepicker.View())
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
+	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
 }
@@ -583,4 +614,146 @@ func (m Model) viewSolutionPicker() string {
 	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • esc: cancel")
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, resourceInfo, "", solutionBox, helpRendered)
+}
+
+func (m Model) viewCreateModeSelect() string {
+	availableWidth := m.width - 12
+
+	// Title
+	title := titleStyle.Render("Create Web Resource")
+
+	// Solution info
+	var solutionInfo string
+	if m.createSolution != nil {
+		solutionInfo = dimStyle.Render(fmt.Sprintf("Solution: %s", m.createSolution.FriendlyName))
+	}
+
+	// Mode options
+	var modeContent strings.Builder
+	modeContent.WriteString("Select creation mode:\n\n")
+
+	modes := []string{"Single File", "Folder (multiple files)"}
+	for i, mode := range modes {
+		if i == m.createModeSelected {
+			modeContent.WriteString(selectedStyle.Render("> " + mode))
+		} else {
+			modeContent.WriteString(normalStyle.Render("  " + mode))
+		}
+		modeContent.WriteString("\n")
+	}
+
+	modeBox := contentBoxStyle.Width(availableWidth).Render(modeContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • esc: cancel")
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, solutionInfo, "", modeBox, helpRendered)
+}
+
+func (m Model) viewCreateNameInput() string {
+	availableWidth := m.width - 12
+
+	// Title
+	title := titleStyle.Render("Create Web Resource")
+
+	// File info
+	var fileInfo string
+	if len(m.createFiles) > 0 {
+		fileInfo = dimStyle.Render(fmt.Sprintf("File: %s", m.createFiles[0].LocalPath))
+	}
+
+	// Name input
+	var inputContent strings.Builder
+	inputContent.WriteString("Enter web resource name:\n\n")
+	inputContent.WriteString(m.textInput.View())
+	inputContent.WriteString("\n\n")
+	inputContent.WriteString(dimStyle.Render("Example: publisher_/folder/filename.js"))
+
+	inputBox := contentBoxStyle.Width(availableWidth).Render(inputContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("enter: confirm • esc: back")
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, fileInfo, "", inputBox, helpRendered)
+}
+
+func (m Model) viewCreatePrefixInput() string {
+	availableWidth := m.width - 12
+
+	// Title
+	title := titleStyle.Render("Create Web Resources")
+
+	// File count info
+	fileInfo := dimStyle.Render(fmt.Sprintf("Found %d files to create", len(m.createFiles)))
+
+	// Prefix input
+	var inputContent strings.Builder
+	inputContent.WriteString("Enter prefix for web resource names:\n\n")
+	inputContent.WriteString(m.textInput.View())
+	inputContent.WriteString("\n\n")
+	inputContent.WriteString(dimStyle.Render("Example: publisher_/AppName/"))
+	inputContent.WriteString("\n")
+	inputContent.WriteString(dimStyle.Render("Files will be named: <prefix><relative_path>"))
+
+	inputBox := contentBoxStyle.Width(availableWidth).Render(inputContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("enter: confirm • esc: back")
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, fileInfo, "", inputBox, helpRendered)
+}
+
+func (m Model) viewCreateConfirm() string {
+	availableWidth := m.width - 12
+
+	// Title
+	title := titleStyle.Render("Confirm Creation")
+
+	// Solution info
+	var solutionInfo string
+	if m.createSolution != nil {
+		solutionInfo = dimStyle.Render(fmt.Sprintf("Solution: %s", m.createSolution.FriendlyName))
+	}
+
+	// File list
+	var fileContent strings.Builder
+	fileContent.WriteString(fmt.Sprintf("Creating %d web resource(s):\n\n", len(m.createFiles)))
+
+	if m.creatingResources {
+		fileContent.WriteString(m.spinner.View())
+		fileContent.WriteString(" Creating resources...")
+	} else {
+		// Calculate visible range for scrolling
+		visibleLines := 8
+		start := 0
+		if m.createFileSelected >= visibleLines {
+			start = m.createFileSelected - visibleLines + 1
+		}
+
+		end := start + visibleLines
+		if end > len(m.createFiles) {
+			end = len(m.createFiles)
+		}
+
+		for i := start; i < end; i++ {
+			file := m.createFiles[i]
+			line := file.WebResName
+
+			if i == m.createFileSelected {
+				fileContent.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				fileContent.WriteString(normalStyle.Render("  " + line))
+			}
+			fileContent.WriteString("\n")
+		}
+
+		if len(m.createFiles) > visibleLines {
+			fileContent.WriteString(dimStyle.Render(fmt.Sprintf("\n[%d/%d]", m.createFileSelected+1, len(m.createFiles))))
+		}
+	}
+
+	fileBox := contentBoxStyle.Width(availableWidth).Render(fileContent.String())
+
+	var helpRendered string
+	if m.creatingResources {
+		helpRendered = helpStyle.Width(availableWidth).Render("Please wait...")
+	} else {
+		helpRendered = helpStyle.Width(availableWidth).Render("↑/↓: scroll • enter/y: create • esc: back")
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, solutionInfo, "", fileBox, helpRendered)
 }
