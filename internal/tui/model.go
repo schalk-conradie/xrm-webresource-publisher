@@ -117,14 +117,15 @@ type Model struct {
 	solutionResource *d365.WebResource // the resource to add to a solution
 	loadingSolutions bool
 	// Create web resource
-	createMode         CreateMode
-	createModeSelected int
-	createSolution     *d365.Solution
-	createFiles        []CreateFileInfo
-	createFileSelected int
-	createPrefix       string
-	createName         string
-	creatingResources  bool
+	createMode          CreateMode
+	createModeSelected  int
+	createSolution      *d365.Solution
+	createFiles         []CreateFileInfo
+	createFilesOriginal []CreateFileInfo // original list for reset
+	createFileSelected  int
+	createPrefix        string
+	createName          string
+	creatingResources   bool
 }
 
 // NewModel creates a new application model

@@ -751,6 +751,10 @@ func (m Model) viewCreateConfirm() string {
 	var helpRendered string
 	if m.creatingResources {
 		helpRendered = helpStyle.Width(availableWidth).Render("Please wait...")
+	} else if m.createMode == CreateModeFolder && len(m.createFiles) > 1 {
+		helpRendered = helpStyle.Width(availableWidth).Render("↑/↓: scroll • d: remove • r: reset list • enter/y: create • esc: back")
+	} else if m.createMode == CreateModeFolder {
+		helpRendered = helpStyle.Width(availableWidth).Render("↑/↓: scroll • r: reset list • enter/y: create • esc: back")
 	} else {
 		helpRendered = helpStyle.Width(availableWidth).Render("↑/↓: scroll • enter/y: create • esc: back")
 	}

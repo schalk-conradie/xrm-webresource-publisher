@@ -821,6 +821,9 @@ func (m Model) handleCreateFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle folderFilesMsg - this comes back after scanning a folder
 	if filesMsg, ok := msg.(folderFilesMsg); ok {
 		m.createFiles = filesMsg
+		// Store original list for reset functionality
+		m.createFilesOriginal = make([]CreateFileInfo, len(filesMsg))
+		copy(m.createFilesOriginal, filesMsg)
 		if len(filesMsg) == 0 {
 			m.status = "No supported files found in folder"
 			m.statusIsError = true
@@ -1264,6 +1267,7 @@ func (m Model) handleCreateFilePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleCreateNameInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.textInput.Blur()
 		m.state = StateCreateFilePicker
 		m.textInput.SetValue("")
 		return m, m.filepicker.Init()
@@ -1276,6 +1280,7 @@ func (m Model) handleCreateNameInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		m.textInput.Blur()
 		// Update the file info with the name
 		if len(m.createFiles) > 0 {
 			m.createFiles[0].WebResName = name
@@ -1293,6 +1298,7 @@ func (m Model) handleCreateNameInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleCreatePrefixInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.textInput.Blur()
 		m.state = StateCreateFolderPicker
 		m.textInput.SetValue("")
 		return m, m.filepicker.Init()
@@ -1300,6 +1306,7 @@ func (m Model) handleCreatePrefixInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		prefix := strings.TrimSpace(m.textInput.Value())
 		m.createPrefix = prefix
+		m.textInput.Blur()
 
 		// Apply prefix to all files
 		for i := range m.createFiles {
@@ -1324,11 +1331,31 @@ func (m Model) handleCreateConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go back based on mode
 		if m.createMode == CreateModeSingleFile {
 			m.state = StateCreateNameInput
+			m.textInput.SetValue(m.createFiles[0].WebResName)
+			m.textInput.Focus()
 		} else {
+			// Restore original files and go back to prefix input
+			m.createFiles = make([]CreateFileInfo, len(m.createFilesOriginal))
+			copy(m.createFiles, m.createFilesOriginal)
 			m.state = StateCreatePrefixInput
 			m.textInput.SetValue(m.createPrefix)
+			m.textInput.Focus()
 		}
 		return m, nil
+
+	case "r":
+		// Reset file list to original (folder mode only)
+		if m.createMode == CreateModeFolder && len(m.createFilesOriginal) > 0 {
+			m.createFiles = make([]CreateFileInfo, len(m.createFilesOriginal))
+			copy(m.createFiles, m.createFilesOriginal)
+			// Re-apply prefix
+			for i := range m.createFiles {
+				m.createFiles[i].WebResName = m.createPrefix + m.createFiles[i].WebResName
+			}
+			m.createFileSelected = 0
+			m.status = "File list reset"
+			m.statusIsError = false
+		}
 
 	case "up", "k":
 		if m.createFileSelected > 0 {
@@ -1338,6 +1365,15 @@ func (m Model) handleCreateConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.createFileSelected < len(m.createFiles)-1 {
 			m.createFileSelected++
+		}
+
+	case "d", "delete", "backspace":
+		// Remove selected file from list (only for folder mode with multiple files)
+		if m.createMode == CreateModeFolder && len(m.createFiles) > 1 {
+			m.createFiles = append(m.createFiles[:m.createFileSelected], m.createFiles[m.createFileSelected+1:]...)
+			if m.createFileSelected >= len(m.createFiles) {
+				m.createFileSelected = len(m.createFiles) - 1
+			}
 		}
 
 	case "enter", "y":
