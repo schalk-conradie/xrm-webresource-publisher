@@ -29,10 +29,12 @@ type (
 		path       string
 		resourceID string
 	}
-	errMsg          error
-	statusClearMsg  struct{}
-	fileChangeMsg   string
-	watcherReadyMsg *watcher.Watcher
+	errMsg            error
+	statusClearMsg    struct{}
+	fileChangeMsg     string
+	watcherReadyMsg   *watcher.Watcher
+	tokenRefreshedMsg *auth.Token
+	reAuthRequiredMsg struct{}
 )
 
 // Init initializes the model
@@ -68,9 +70,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if env := m.config.GetEnvironment(m.config.CurrentEnvironment); env != nil {
 			auth.SaveToken(env.Name, msg)
 			m.client = d365.NewClient(env.URL, msg.AccessToken)
+			// Set up token refresh callback
+			m.setupTokenRefresh()
 			m.state = StateList
 			return m, m.fetchResources()
 		}
+
+	case tokenRefreshedMsg:
+		// Token was refreshed automatically
+		m.token = msg
+		if env := m.config.GetEnvironment(m.config.CurrentEnvironment); env != nil {
+			auth.SaveToken(env.Name, msg)
+			m.status = "Token refreshed"
+			m.statusIsError = false
+		}
+
+	case reAuthRequiredMsg:
+		// Token refresh failed, need to re-authenticate
+		m.status = "Session expired, re-authenticating..."
+		m.statusIsError = false
+		m.state = StateAuth
+		return m, m.authenticateInteractive()
 
 	case resourcesMsg:
 		m.resources = msg
@@ -555,6 +575,13 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		return m, m.fetchResources()
+
+	case "l":
+		// Manual re-authentication
+		m.status = "Re-authenticating..."
+		m.statusIsError = false
+		m.state = StateAuth
+		return m, m.authenticateInteractive()
 	}
 
 	return m, nil
@@ -834,4 +861,32 @@ func incrementVersion(version string) string {
 
 	parts[2] = strconv.Itoa(minor + 1)
 	return strings.Join(parts, ".")
+}
+
+// setupTokenRefresh configures the client's token refresh callback
+func (m *Model) setupTokenRefresh() {
+	if m.client == nil {
+		return
+	}
+
+	env := m.config.GetEnvironment(m.config.CurrentEnvironment)
+	if env == nil {
+		return
+	}
+
+	orgURL := env.URL
+	envName := env.Name
+
+	m.client.SetTokenRefreshFunc(func() (string, error) {
+		// Try to refresh the token silently
+		newToken, err := auth.RefreshAccessToken("", orgURL)
+		if err != nil {
+			return "", err
+		}
+
+		// Save the new token
+		auth.SaveToken(envName, newToken)
+
+		return newToken.AccessToken, nil
+	})
 }

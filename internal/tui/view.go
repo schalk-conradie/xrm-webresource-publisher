@@ -293,9 +293,9 @@ func (m Model) viewList() string {
 	// Help text based on active tab
 	var helpText string
 	if m.bindingTab == BindingTabBind {
-		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
 	} else {
-		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • l: login • esc: back • q: quit"
 	}
 	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
