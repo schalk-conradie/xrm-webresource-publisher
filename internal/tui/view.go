@@ -49,8 +49,7 @@ var (
 
 	helpStyle = lipgloss.NewStyle().
 			Foreground(COLOR_MutedDark).
-			Padding(0, 1).
-			MaxWidth(80) // Allow text to wrap instead of extending beyond
+			Padding(0, 1)
 
 	boundStyle = lipgloss.NewStyle().
 			Foreground(COLOR_Success)
@@ -307,10 +306,7 @@ func (m Model) viewList() string {
 
 	// Account for main border padding (2 top + 2 bottom), spacing between elements, content box border, and status bar
 	fixedHeight := titleHeight + tabsHeight + helpHeight + statusBarHeight + 8 // 2 padding top, 2 padding bottom, 2 for content border, 2 for spacing
-	contentHeight := m.height - fixedHeight
-	if contentHeight < 5 {
-		contentHeight = 5
-	}
+	contentHeight := max(m.height-fixedHeight, 5)
 
 	// Tab content
 	var content string
