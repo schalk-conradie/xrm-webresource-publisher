@@ -302,6 +302,19 @@ func (m Model) handleEnvSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "c":
+		if m.envSelected < len(m.config.Environments) {
+			env := m.config.Environments[m.envSelected]
+			if err := auth.DeleteToken(env.Name); err != nil {
+				m.status = fmt.Sprintf("Failed to clear auth: %v", err)
+				m.statusIsError = true
+			} else {
+				m.status = fmt.Sprintf("Cleared auth for %s", env.Name)
+				m.statusIsError = false
+			}
+		}
+		return m, nil
+
 	case "enter":
 		if m.envSelected < len(m.config.Environments) {
 			env := m.config.Environments[m.envSelected]

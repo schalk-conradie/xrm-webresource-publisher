@@ -250,7 +250,7 @@ func (m Model) viewEnvironmentSelect() string {
 	}
 
 	envBox := contentBoxStyle.Width(availableWidth).Render(envContent.String())
-	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • q: quit")
+	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • c: clear auth • q: quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, envBox, helpRendered)
 }
