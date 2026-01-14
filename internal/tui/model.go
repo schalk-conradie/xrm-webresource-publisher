@@ -23,6 +23,7 @@ const (
 	StateList
 	StateBinding
 	StateFilePicker
+	StateSolutionPicker
 )
 
 // InputMode represents the current input mode
@@ -89,6 +90,11 @@ type Model struct {
 	width            int
 	height           int
 	err              error
+	// Solution picker
+	solutions        []d365.Solution
+	solutionSelected int
+	solutionResource *d365.WebResource // the resource to add to a solution
+	loadingSolutions bool
 }
 
 // NewModel creates a new application model

@@ -35,6 +35,13 @@ type (
 	watcherReadyMsg   *watcher.Watcher
 	tokenRefreshedMsg *auth.Token
 	reAuthRequiredMsg struct{}
+	solutionsMsg      []d365.Solution
+	addToSolutionMsg  struct {
+		success      bool
+		err          error
+		solutionName string
+		resourceName string
+	}
 )
 
 // Init initializes the model
@@ -141,6 +148,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Error: %v", msg)
 		m.statusIsError = true
 		m.err = msg
+
+	case solutionsMsg:
+		m.solutions = msg
+		m.loadingSolutions = false
+		if len(msg) == 0 {
+			m.status = "No solutions found"
+			m.statusIsError = true
+			m.state = StateList
+			m.solutionResource = nil
+		}
+
+	case addToSolutionMsg:
+		if msg.success {
+			m.status = fmt.Sprintf("Added %s to %s", msg.resourceName, msg.solutionName)
+			m.statusIsError = false
+		} else {
+			m.status = fmt.Sprintf("Failed to add to solution: %v", msg.err)
+			m.statusIsError = true
+		}
+		m.state = StateList
+		m.solutionResource = nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -163,6 +191,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBindingKey(msg)
 	case StateFilePicker:
 		return m.handleFilePickerKey(msg)
+	case StateSolutionPicker:
+		return m.handleSolutionPickerKey(msg)
 	}
 
 	return m, nil
@@ -582,6 +612,42 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusIsError = false
 		m.state = StateAuth
 		return m, m.authenticateInteractive()
+
+	case "s":
+		// Add to solution - get the selected resource
+		var selectedResource *d365.WebResource
+		if m.bindingTab == BindingTabBind {
+			if m.resourceSelected < len(m.displayItems) {
+				item := m.displayItems[m.resourceSelected]
+				if !item.Node.IsFolder && item.Resource != nil {
+					selectedResource = item.Resource
+				}
+			}
+		} else {
+			// In File List tab
+			bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+			if m.bindingSelected < len(bindings) {
+				binding := bindings[m.bindingSelected]
+				// Find the resource
+				for i := range m.resources {
+					if m.resources[i].ID == binding.WebResourceID {
+						selectedResource = &m.resources[i]
+						break
+					}
+				}
+			}
+		}
+
+		if selectedResource != nil {
+			m.solutionResource = selectedResource
+			m.solutionSelected = 0
+			m.loadingSolutions = true
+			m.state = StateSolutionPicker
+			return m, m.fetchSolutions()
+		} else {
+			m.status = "Select a file first"
+			m.statusIsError = true
+		}
 	}
 
 	return m, nil
@@ -889,4 +955,77 @@ func (m *Model) setupTokenRefresh() {
 
 		return newToken.AccessToken, nil
 	})
+}
+
+func (m Model) handleSolutionPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		m.state = StateList
+		m.solutionResource = nil
+		m.solutions = nil
+		return m, nil
+
+	case "up", "k":
+		if m.solutionSelected > 0 {
+			m.solutionSelected--
+		}
+
+	case "down", "j":
+		if m.solutionSelected < len(m.solutions)-1 {
+			m.solutionSelected++
+		}
+
+	case "enter":
+		if m.solutionSelected < len(m.solutions) && m.solutionResource != nil {
+			solution := m.solutions[m.solutionSelected]
+			resource := m.solutionResource
+			m.status = fmt.Sprintf("Adding %s to %s...", resource.Name, solution.FriendlyName)
+			m.statusIsError = false
+			return m, m.addToSolution(solution, *resource)
+		}
+	}
+
+	return m, nil
+}
+
+func (m Model) fetchSolutions() tea.Cmd {
+	client := m.client
+
+	return func() tea.Msg {
+		if client == nil {
+			return errMsg(fmt.Errorf("not connected"))
+		}
+		solutions, err := client.ListSolutions()
+		if err != nil {
+			return errMsg(err)
+		}
+		return solutionsMsg(solutions)
+	}
+}
+
+func (m Model) addToSolution(solution d365.Solution, resource d365.WebResource) tea.Cmd {
+	client := m.client
+
+	return func() tea.Msg {
+		if client == nil {
+			return errMsg(fmt.Errorf("not connected"))
+		}
+		err := client.AddWebResourceToSolution(solution.UniqueName, resource.ID)
+		if err != nil {
+			return addToSolutionMsg{
+				success:      false,
+				err:          err,
+				solutionName: solution.FriendlyName,
+				resourceName: resource.Name,
+			}
+		}
+		return addToSolutionMsg{
+			success:      true,
+			solutionName: solution.FriendlyName,
+			resourceName: resource.Name,
+		}
+	}
 }

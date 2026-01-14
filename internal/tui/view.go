@@ -186,6 +186,8 @@ func (m Model) View() string {
 		content = m.viewList()
 	case StateBinding:
 		content = m.viewBinding()
+	case StateSolutionPicker:
+		content = m.viewSolutionPicker()
 	}
 
 	statusBar := m.renderStatusBar(m.width - 12) // Account for main border and padding
@@ -292,9 +294,9 @@ func (m Model) viewList() string {
 	// Help text based on active tab
 	var helpText string
 	if m.bindingTab == BindingTabBind {
-		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
 	} else {
-		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • l: login • esc: back • q: quit"
 	}
 	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
@@ -525,4 +527,60 @@ func (m Model) viewFilePicker() string {
 	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
 
 	return b.String()
+}
+
+func (m Model) viewSolutionPicker() string {
+	availableWidth := m.width - 12 // Main border (4) + content padding (8)
+
+	// Title
+	title := titleStyle.Render("Add to Solution")
+
+	// Resource being added
+	var resourceInfo string
+	if m.solutionResource != nil {
+		resourceInfo = dimStyle.Render(fmt.Sprintf("Resource: %s", m.solutionResource.Name))
+	}
+
+	// Solution list
+	var solutionContent strings.Builder
+
+	if m.loadingSolutions {
+		solutionContent.WriteString(m.spinner.View())
+		solutionContent.WriteString(" Loading solutions...")
+	} else if len(m.solutions) == 0 {
+		solutionContent.WriteString(dimStyle.Render("No unmanaged solutions found"))
+	} else {
+		// Calculate visible range for scrolling
+		visibleLines := 10
+		start := 0
+		if m.solutionSelected >= visibleLines {
+			start = m.solutionSelected - visibleLines + 1
+		}
+
+		end := start + visibleLines
+		if end > len(m.solutions) {
+			end = len(m.solutions)
+		}
+
+		for i := start; i < end; i++ {
+			solution := m.solutions[i]
+			line := fmt.Sprintf("%s (%s)", solution.FriendlyName, solution.Version)
+
+			if i == m.solutionSelected {
+				solutionContent.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				solutionContent.WriteString(normalStyle.Render("  " + line))
+			}
+			solutionContent.WriteString("\n")
+		}
+
+		if len(m.solutions) > visibleLines {
+			solutionContent.WriteString(dimStyle.Render(fmt.Sprintf("\n[%d/%d]", m.solutionSelected+1, len(m.solutions))))
+		}
+	}
+
+	solutionBox := contentBoxStyle.Width(availableWidth).Render(solutionContent.String())
+	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • esc: cancel")
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, resourceInfo, "", solutionBox, helpRendered)
 }
