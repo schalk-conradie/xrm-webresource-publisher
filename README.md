@@ -43,6 +43,7 @@ d365tui
 - Bind files to web resources with `b`
 - Enable auto-publishing with `a`
 - Publish manually with `p`
+- Toggle managed/unmanaged view with `m`
 - Unbind with `u`
 
 #### File List Tab
@@ -51,6 +52,7 @@ d365tui
 - See file paths and binding status at a glance
 - Toggle auto-publish with `a`
 - Publish with `p`
+- Toggle managed/unmanaged view with `m`
 - Unbind with `u`
 
 ### Keyboard Shortcuts
@@ -64,6 +66,7 @@ d365tui
 | `u`             | Unbind file                             |
 | `p`             | Publish resource                        |
 | `a`             | Toggle auto-publish                     |
+| `m`             | Toggle managed/unmanaged filter        |
 | `r`             | Refresh resources                       |
 | `esc`           | Back/Cancel                             |
 | `q` or `ctrl+c` | Quit                                    |

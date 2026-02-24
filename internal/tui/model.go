@@ -126,6 +126,7 @@ type Model struct {
 	createPrefix        string
 	createName          string
 	creatingResources   bool
+	includeManaged      bool
 }
 
 // NewModel creates a new application model

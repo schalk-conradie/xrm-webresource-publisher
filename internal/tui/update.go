@@ -657,6 +657,17 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.fetchResources()
 
+	case "m":
+		m.includeManaged = !m.includeManaged
+		if m.includeManaged {
+			m.status = "Showing managed + unmanaged web resources"
+		} else {
+			m.status = "Showing unmanaged web resources only"
+		}
+		m.statusIsError = false
+		m.resourceSelected = 0
+		return m, m.fetchResources()
+
 	case "l":
 		// Manual re-authentication
 		m.status = "Re-authenticating..."
@@ -910,7 +921,7 @@ func (m Model) fetchResources() tea.Cmd {
 		if m.client == nil {
 			return errMsg(fmt.Errorf("not connected"))
 		}
-		resources, err := m.client.ListWebResources()
+		resources, err := m.client.ListWebResources(m.includeManaged)
 		if err != nil {
 			return errMsg(err)
 		}

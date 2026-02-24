@@ -290,10 +290,14 @@ func (m Model) viewList() string {
 	// Title
 	env := m.config.GetEnvironment(m.config.CurrentEnvironment)
 	var title string
+	filterLabel := "Unmanaged"
+	if m.includeManaged {
+		filterLabel = "All"
+	}
 	if env != nil {
-		title = titleStyle.Render(fmt.Sprintf("Web Resources - %s", env.Name))
+		title = titleStyle.Render(fmt.Sprintf("Web Resources - %s (%s)", env.Name, filterLabel))
 	} else {
-		title = titleStyle.Render("Web Resources")
+		title = titleStyle.Render(fmt.Sprintf("Web Resources (%s)", filterLabel))
 	}
 
 	// Tabs
@@ -302,9 +306,9 @@ func (m Model) viewList() string {
 	// Help text based on active tab
 	var helpText string
 	if m.bindingTab == BindingTabBind {
-		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • N: new • a: toggle auto • r: refresh • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • N: new • a: toggle auto • m: managed/all • r: refresh • l: login • esc: back • q: quit"
 	} else {
-		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • N: new • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • N: new • m: managed/all • l: login • esc: back • q: quit"
 	}
 	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
@@ -408,7 +412,12 @@ func (m Model) viewBindFilesTab(width, height int) string {
 					status = unboundStyle.Render("[unbound]")
 				}
 
-				line = fmt.Sprintf("%s  %s %s", indent, node.Name, status)
+				managedTag := ""
+				if res.IsManaged {
+					managedTag = dimStyle.Render("[managed] ")
+				}
+
+				line = fmt.Sprintf("%s  %s %s%s", indent, node.Name, managedTag, status)
 			}
 
 			if i == m.resourceSelected {
