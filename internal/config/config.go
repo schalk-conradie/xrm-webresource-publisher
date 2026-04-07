@@ -11,8 +11,9 @@ import (
 
 // Environment represents a Dynamics 365 environment
 type Environment struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	TokenOutputDir string `json:"tokenOutputDir,omitempty"`
 }
 
 // Binding maps a local file to a web resource
@@ -174,6 +175,18 @@ func (c *Config) UpdateEnvironment(oldName, newName, newURL string) error {
 				}
 			}
 
+			return c.Save()
+		}
+	}
+
+	return errors.New("environment not found")
+}
+
+// UpdateEnvironmentTokenOutputDir updates the token export directory for an environment.
+func (c *Config) UpdateEnvironmentTokenOutputDir(name, dir string) error {
+	for i := range c.Environments {
+		if c.Environments[i].Name == name {
+			c.Environments[i].TokenOutputDir = strings.TrimSpace(dir)
 			return c.Save()
 		}
 	}

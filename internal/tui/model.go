@@ -23,6 +23,7 @@ const (
 	StateList
 	StateBinding
 	StateFilePicker
+	StateTokenExportPicker
 	StateSolutionPicker
 	StateCreateModeSelect
 	StateCreateFilePicker
@@ -106,6 +107,9 @@ type Model struct {
 	spinner          spinner.Model
 	filepicker       filepicker.Model
 	bindingResource  *d365.WebResource
+	tokenExportEnv   string
+	tokenExportState State
+	tokenExportWrite bool
 	editingEnvName   string
 	publishing       map[string]bool // tracks which resource IDs are currently publishing
 	width            int

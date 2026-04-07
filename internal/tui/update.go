@@ -22,8 +22,14 @@ import (
 // Messages
 type (
 	tokenMsg         *auth.Token
-	resourcesMsg     []d365.WebResource
-	publishResultMsg struct {
+	statusMsg        string
+	tokenExportedMsg struct {
+		token *auth.Token
+		dir   string
+	}
+	tokenExportAuthRequiredMsg struct{}
+	resourcesMsg               []d365.WebResource
+	publishResultMsg           struct {
 		success    bool
 		err        error
 		path       string
@@ -64,6 +70,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.state == StateFilePicker {
 		return m.handleFilePicker(msg)
 	}
+	if m.state == StateTokenExportPicker {
+		return m.handleTokenExportPicker(msg)
+	}
 	if m.state == StateCreateFilePicker || m.state == StateCreateFolderPicker {
 		return m.handleCreateFilePicker(msg)
 	}
@@ -86,6 +95,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.token = msg
 		if env := m.config.GetEnvironment(m.config.CurrentEnvironment); env != nil {
 			auth.SaveToken(env.Name, msg)
+			if err := m.exportTokenForEnvironment(env, msg); err != nil {
+				m.status = fmt.Sprintf("Token export failed: %v", err)
+				m.statusIsError = true
+			}
 			m.client = d365.NewClient(env.URL, msg.AccessToken)
 			// Set up token refresh callback
 			m.setupTokenRefresh()
@@ -98,8 +111,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.token = msg
 		if env := m.config.GetEnvironment(m.config.CurrentEnvironment); env != nil {
 			auth.SaveToken(env.Name, msg)
-			m.status = "Token refreshed"
-			m.statusIsError = false
+			if err := m.exportTokenForEnvironment(env, msg); err != nil {
+				m.status = fmt.Sprintf("Token refreshed, export failed: %v", err)
+				m.statusIsError = true
+			} else {
+				m.status = "Token refreshed"
+				m.statusIsError = false
+			}
 		}
 
 	case reAuthRequiredMsg:
@@ -158,6 +176,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Error: %v", msg)
 		m.statusIsError = true
 		m.err = msg
+
+	case statusMsg:
+		m.status = string(msg)
+		m.statusIsError = false
+
+	case tokenExportedMsg:
+		m.token = msg.token
+		if m.client != nil && msg.token != nil {
+			m.client.UpdateToken(msg.token.AccessToken)
+		}
+		m.status = fmt.Sprintf("Wrote token.json to %s", filepath.Join(msg.dir, "token.json"))
+		m.statusIsError = false
+
+	case tokenExportAuthRequiredMsg:
+		m.status = "Authentication required to write token.json"
+		m.statusIsError = false
+		m.state = StateAuth
+		return m, m.authenticateInteractive()
 
 	case solutionsMsg:
 		m.solutions = msg
@@ -416,6 +452,30 @@ func (m Model) handleEnvSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "t":
+		if m.envSelected < len(m.config.Environments) {
+			return m.openTokenExportPicker(m.config.Environments[m.envSelected], StateEnvironmentSelect, false)
+		}
+		return m, nil
+
+	case "x":
+		if m.envSelected < len(m.config.Environments) {
+			env := m.config.Environments[m.envSelected]
+			if env.TokenOutputDir == "" {
+				m.status = "No token export root configured"
+				m.statusIsError = true
+				return m, nil
+			}
+			if err := m.config.UpdateEnvironmentTokenOutputDir(env.Name, ""); err != nil {
+				m.status = fmt.Sprintf("Failed to clear token export root: %v", err)
+				m.statusIsError = true
+			} else {
+				m.status = fmt.Sprintf("Cleared token export root for %s", env.Name)
+				m.statusIsError = false
+			}
+		}
+		return m, nil
+
 	case "enter":
 		if m.envSelected < len(m.config.Environments) {
 			env := m.config.Environments[m.envSelected]
@@ -425,6 +485,10 @@ func (m Model) handleEnvSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Try to load existing token
 			if token, err := auth.LoadToken(env.Name); err == nil && !token.IsExpired() {
 				m.token = token
+				if err := m.exportTokenForEnvironment(&env, token); err != nil {
+					m.status = fmt.Sprintf("Token export failed: %v", err)
+					m.statusIsError = true
+				}
 				m.client = d365.NewClient(env.URL, token.AccessToken)
 				m.state = StateList
 				return m, m.fetchResources()
@@ -668,6 +732,21 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.resourceSelected = 0
 		return m, m.fetchResources()
 
+	case "t":
+		if m.bindingTab == BindingTabList {
+			env := m.config.GetEnvironment(m.config.CurrentEnvironment)
+			if env == nil {
+				m.status = "Environment not found"
+				m.statusIsError = true
+				return m, nil
+			}
+			if strings.TrimSpace(env.TokenOutputDir) == "" {
+				return m.openTokenExportPicker(*env, StateList, true)
+			}
+			return m, m.refreshAndExportToken(env.TokenOutputDir)
+		}
+		return m, nil
+
 	case "l":
 		// Manual re-authentication
 		m.status = "Re-authenticating..."
@@ -828,6 +907,56 @@ func (m Model) handleFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) openTokenExportPicker(env config.Environment, returnState State, writeToken bool) (tea.Model, tea.Cmd) {
+	fp := filepicker.New()
+	startDir := env.TokenOutputDir
+	if startDir == "" {
+		startDir, _ = os.UserHomeDir()
+	}
+	if info, err := os.Stat(startDir); err != nil || !info.IsDir() {
+		startDir, _ = os.UserHomeDir()
+	}
+
+	fp.CurrentDirectory = startDir
+	fp.Height = m.height - 6
+	m.filepicker = fp
+	m.tokenExportEnv = env.Name
+	m.tokenExportState = returnState
+	m.tokenExportWrite = writeToken
+	m.state = StateTokenExportPicker
+	return m, m.filepicker.Init()
+}
+
+func (m Model) handleTokenExportPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc", "q", "ctrl+c":
+			m.state = m.tokenExportState
+			m.tokenExportEnv = ""
+			m.tokenExportState = StateEnvironmentSelect
+			m.tokenExportWrite = false
+			return m, nil
+		case "s", " ":
+			m.state = m.tokenExportState
+			cmd := m.saveTokenExportDirectory(m.filepicker.CurrentDirectory, m.tokenExportWrite)
+			m.tokenExportEnv = ""
+			m.tokenExportState = StateEnvironmentSelect
+			m.tokenExportWrite = false
+			return m, cmd
+		}
+	}
+
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsMsg.Width
+		m.height = wsMsg.Height
+		m.filepicker.Height = wsMsg.Height - 6
+	}
+
+	var cmd tea.Cmd
+	m.filepicker, cmd = m.filepicker.Update(msg)
+	return m, cmd
+}
+
 func (m Model) handleCreateFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle folderFilesMsg - this comes back after scanning a folder
 	if filesMsg, ok := msg.(folderFilesMsg); ok {
@@ -926,6 +1055,98 @@ func (m Model) fetchResources() tea.Cmd {
 			return errMsg(err)
 		}
 		return resourcesMsg(resources)
+	}
+}
+
+func (m Model) saveTokenExportDirectory(dir string, writeToken bool) tea.Cmd {
+	cfg := m.config
+	envName := m.tokenExportEnv
+	activeEnv := m.config.CurrentEnvironment
+	currentToken := m.token
+
+	return func() tea.Msg {
+		if envName == "" {
+			return errMsg(fmt.Errorf("environment not found"))
+		}
+		if err := cfg.UpdateEnvironmentTokenOutputDir(envName, dir); err != nil {
+			return errMsg(err)
+		}
+
+		env := cfg.GetEnvironment(envName)
+		if env == nil {
+			return errMsg(fmt.Errorf("environment not found"))
+		}
+
+		if writeToken {
+			return m.refreshAndExportToken(dir)()
+		}
+
+		var token *auth.Token
+		if currentToken != nil && activeEnv == envName {
+			token = currentToken
+		} else if storedToken, err := auth.LoadToken(envName); err == nil && !storedToken.IsExpired() {
+			token = storedToken
+		}
+
+		if token != nil {
+			if err := auth.ExportAccessToken(dir, token); err != nil {
+				return errMsg(fmt.Errorf("saved export root, but writing token failed: %w", err))
+			}
+			return statusMsg(fmt.Sprintf("Token export root set to %s", dir))
+		}
+
+		return statusMsg(fmt.Sprintf("Token export root set to %s; token will be written after next login", dir))
+	}
+}
+
+func (m Model) refreshAndExportToken(dir string) tea.Cmd {
+	cfg := m.config
+	envName := m.config.CurrentEnvironment
+	currentToken := m.token
+
+	return func() tea.Msg {
+		env := cfg.GetEnvironment(envName)
+		if env == nil {
+			return errMsg(fmt.Errorf("environment not found"))
+		}
+
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			dir = strings.TrimSpace(env.TokenOutputDir)
+		}
+		if dir == "" {
+			return errMsg(fmt.Errorf("token export root is not configured"))
+		}
+
+		if currentToken != nil && !currentToken.IsExpired() {
+			if err := auth.SaveToken(env.Name, currentToken); err != nil {
+				return errMsg(fmt.Errorf("save token: %w", err))
+			}
+			if err := auth.ExportAccessToken(dir, currentToken); err != nil {
+				return errMsg(fmt.Errorf("write token.json: %w", err))
+			}
+			return tokenExportedMsg{token: currentToken, dir: dir}
+		}
+
+		if storedToken, err := auth.LoadToken(env.Name); err == nil && !storedToken.IsExpired() {
+			if err := auth.ExportAccessToken(dir, storedToken); err != nil {
+				return errMsg(fmt.Errorf("write token.json: %w", err))
+			}
+			return tokenExportedMsg{token: storedToken, dir: dir}
+		}
+
+		token, err := auth.RefreshAccessToken("", env.URL)
+		if err != nil {
+			return tokenExportAuthRequiredMsg{}
+		}
+		if err := auth.SaveToken(env.Name, token); err != nil {
+			return errMsg(fmt.Errorf("save token: %w", err))
+		}
+		if err := auth.ExportAccessToken(dir, token); err != nil {
+			return errMsg(fmt.Errorf("write token.json: %w", err))
+		}
+
+		return tokenExportedMsg{token: token, dir: dir}
 	}
 }
 
@@ -1098,9 +1319,18 @@ func (m *Model) setupTokenRefresh() {
 
 		// Save the new token
 		auth.SaveToken(envName, newToken)
+		_ = m.exportTokenForEnvironment(env, newToken)
 
 		return newToken.AccessToken, nil
 	})
+}
+
+func (m Model) exportTokenForEnvironment(env *config.Environment, token *auth.Token) error {
+	if env == nil || token == nil || strings.TrimSpace(env.TokenOutputDir) == "" {
+		return nil
+	}
+
+	return auth.ExportAccessToken(env.TokenOutputDir, token)
 }
 
 func (m Model) handleSolutionPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

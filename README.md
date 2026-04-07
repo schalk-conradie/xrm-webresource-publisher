@@ -68,6 +68,8 @@ d365tui
 | `a`             | Toggle auto-publish                     |
 | `m`             | Toggle managed/unmanaged filter        |
 | `r`             | Refresh resources                       |
+| `t`             | Set or refresh exported token           |
+| `x`             | Clear token export root                 |
 | `esc`           | Back/Cancel                             |
 | `q` or `ctrl+c` | Quit                                    |
 
@@ -75,13 +77,20 @@ d365tui
 
 Configuration is stored in:
 
-- **macOS/Linux**: `~/.config/d365tui/config.json`
-- **Windows**: `%APPDATA%\d365tui\config.json`
+- **macOS/Linux**: `~/.d365tui/config.json`
+- **Windows**: `%USERPROFILE%\.d365tui\config.json`
 
 Tokens are stored in:
 
-- **macOS/Linux**: `~/.config/d365tui/tokens/`
-- **Windows**: `%APPDATA%\d365tui\tokens\`
+- **macOS/Linux**: `~/.d365tui/token-<environment>.json`
+- **Windows**: `%USERPROFILE%\.d365tui\token-<environment>.json`
+
+Optional exported access tokens can also be written into a project root as `token.json`:
+
+- Select an environment on the main screen
+- Press `t` to choose a token export root
+- Press `s` or `space` in the directory picker to select the current folder
+- The app will write/update `<root>/token.json` whenever it authenticates or refreshes the token
 
 ## Requirements
 

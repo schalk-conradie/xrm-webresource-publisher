@@ -115,6 +115,12 @@ var (
 				Background(COLOR_BorderLight).
 				Padding(0, 1)
 
+	tokenActionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(COLOR_TextDark).
+				Background(COLOR_Secondary).
+				Padding(0, 1)
+
 	statusBarContainerStyle = lipgloss.NewStyle().
 				MarginTop(1)
 )
@@ -172,7 +178,7 @@ func (m Model) renderStatusBar(width int) string {
 // View renders the UI
 func (m Model) View() string {
 	// File picker needs full screen - don't wrap in borders
-	if m.state == StateFilePicker || m.state == StateCreateFilePicker || m.state == StateCreateFolderPicker {
+	if m.state == StateFilePicker || m.state == StateTokenExportPicker || m.state == StateCreateFilePicker || m.state == StateCreateFolderPicker {
 		return m.viewFilePicker()
 	}
 
@@ -247,6 +253,9 @@ func (m Model) viewEnvironmentSelect() string {
 	} else {
 		for i, env := range m.config.Environments {
 			line := fmt.Sprintf("  %s\n  %s", env.Name, dimStyle.Render(env.URL))
+			if env.TokenOutputDir != "" {
+				line += fmt.Sprintf("\n  %s", dimStyle.Render("token.json -> "+env.TokenOutputDir))
+			}
 			if i == m.envSelected {
 				envContent.WriteString(selectedStyle.Render("> " + line))
 			} else {
@@ -259,7 +268,7 @@ func (m Model) viewEnvironmentSelect() string {
 	}
 
 	envBox := contentBoxStyle.Width(availableWidth).Render(envContent.String())
-	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • c: clear auth • q: quit")
+	helpRendered := helpStyle.Width(availableWidth).Render("↑/↓: navigate • enter: select • a: add • e: edit • d: delete • c: clear auth • t: set token root • x: clear token root • q: quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, envBox, helpRendered)
 }
@@ -308,7 +317,7 @@ func (m Model) viewList() string {
 	if m.bindingTab == BindingTabBind {
 		helpText = "tab: switch • ↑/↓: navigate • enter: expand/collapse • b: bind • u: unbind • p: publish • s: add to solution • N: new • a: toggle auto • m: managed/all • r: refresh • l: login • esc: back • q: quit"
 	} else {
-		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • s: add to solution • N: new • m: managed/all • l: login • esc: back • q: quit"
+		helpText = "tab: switch • ↑/↓: navigate • u: unbind • a: toggle auto • p: publish • t: refresh token • s: add to solution • N: new • m: managed/all • l: login • esc: back • q: quit"
 	}
 	helpRendered := helpStyle.Width(availableWidth).Render(helpText)
 
@@ -441,6 +450,14 @@ func (m Model) viewFileListTab(width, height int) string {
 
 	// Get all bindings for current environment
 	bindings := m.config.GetBindingsForEnvironment(m.config.CurrentEnvironment)
+	env := m.config.GetEnvironment(m.config.CurrentEnvironment)
+
+	tokenLabel := "[t] Choose token root + write token.json"
+	if env != nil && strings.TrimSpace(env.TokenOutputDir) != "" {
+		tokenLabel = "[t] Refresh token.json -> " + env.TokenOutputDir
+	}
+	listContent.WriteString(tokenActionStyle.Render(" " + tokenLabel + " "))
+	listContent.WriteString("\n\n")
 
 	if len(bindings) == 0 {
 		listContent.WriteString(dimStyle.Render("No bound files\n"))
@@ -449,7 +466,7 @@ func (m Model) viewFileListTab(width, height int) string {
 		// Calculate visible range for scrolling based on actual available height
 		// Each binding takes 2 lines (name + path), plus 1 line spacing = 3 lines per item
 		linesPerItem := 3
-		visibleItems := (height - 2) / linesPerItem // Account for content box border
+		visibleItems := (height - 4) / linesPerItem // Account for content box border and token action row
 		if visibleItems < 1 {
 			visibleItems = 1
 		}
@@ -542,6 +559,13 @@ func (m Model) viewFilePicker() string {
 			b.WriteString("\n\n")
 			b.WriteString(fmt.Sprintf("Binding: %s\n\n", m.bindingResource.Name))
 		}
+	case StateTokenExportPicker:
+		title = "Select Token Export Root"
+		helpText = "↑/↓: navigate • enter: open folder • s/space: select current folder • esc: cancel"
+		b.WriteString(titleStyle.Render(title))
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(fmt.Sprintf("Current: %s", m.filepicker.CurrentDirectory)))
+		b.WriteString("\n\n")
 	case StateCreateFilePicker:
 		title = "Select File to Create Web Resource"
 		helpText = "↑/↓: navigate • enter: select file • esc: back"
